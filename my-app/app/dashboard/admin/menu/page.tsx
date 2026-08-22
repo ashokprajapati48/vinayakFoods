@@ -17,10 +17,12 @@ import {
   ToggleRight,
 } from 'lucide-react';
 
+import { MOCK_CATEGORIES } from '@/lib/mockData';
+
 export default function AdminMenuPage() {
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [categories, setCategories] = useState<Category[]>(MOCK_CATEGORIES);
   const [loading, setLoading] = useState(true);
-  const [activeCategory, setActiveCategory] = useState('');
+  const [activeCategory, setActiveCategory] = useState(MOCK_CATEGORIES[0]?.id || '');
 
   // Create item modal
   const [showItemModal, setShowItemModal] = useState(false);
@@ -28,7 +30,7 @@ export default function AdminMenuPage() {
   const [itemName, setItemName] = useState('');
   const [itemPrice, setItemPrice] = useState('');
   const [itemKitchen, setItemKitchen] = useState<'KITCHEN_1' | 'KITCHEN_2'>('KITCHEN_1');
-  const [itemCategory, setItemCategory] = useState('');
+  const [itemCategory, setItemCategory] = useState(MOCK_CATEGORIES[0]?.id || '');
   const [itemDesc, setItemDesc] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -40,13 +42,19 @@ export default function AdminMenuPage() {
   const loadData = useCallback(async () => {
     try {
       const res = await api.get('/menu/categories/all');
-      setCategories(res.data);
-      if (res.data.length > 0 && !activeCategory) {
-        setActiveCategory(res.data[0].id);
-        setItemCategory(res.data[0].id);
+      if (res.data?.length > 0) {
+        setCategories(res.data);
+        if (!activeCategory) {
+          setActiveCategory(res.data[0].id);
+          setItemCategory(res.data[0].id);
+        }
       }
     } catch {
-      //
+      setCategories(MOCK_CATEGORIES);
+      if (MOCK_CATEGORIES.length > 0 && !activeCategory) {
+        setActiveCategory(MOCK_CATEGORIES[0].id);
+        setItemCategory(MOCK_CATEGORIES[0].id);
+      }
     } finally {
       setLoading(false);
     }

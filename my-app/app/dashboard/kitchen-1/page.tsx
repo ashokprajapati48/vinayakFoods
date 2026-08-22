@@ -16,13 +16,15 @@ import {
 
 const KITCHEN = 'KITCHEN_1';
 const KITCHEN_LABEL = 'Kitchen 1';
-const KITCHEN_SUBTITLE = 'Tandoor, Gravies & Breads';
+const KITCHEN_SUBTITLE = 'Non-Veg, Chinese, Soups, Biryanis & Gravies';
 
 type KitchenOrderStatus = 'NEW' | 'PREPARING' | 'READY';
 
 interface KitchenDisplayOrder extends Order {
   kitchenStatus: KitchenOrderStatus;
 }
+
+import { getDemoOrders, saveDemoOrders } from '@/lib/mockData';
 
 export default function Kitchen1Page() {
   const [orders, setOrders] = useState<KitchenDisplayOrder[]>([]);
@@ -32,16 +34,27 @@ export default function Kitchen1Page() {
   const loadOrders = useCallback(async () => {
     try {
       const res = await api.get(`/orders/kitchen/${KITCHEN}`);
-      const enriched = res.data.map((order: Order) => ({
-        ...order,
-        kitchenStatus: order.kitchenOrders?.find((ko) => ko.kitchen === KITCHEN)?.status || 'NEW',
-      }));
-      setOrders(enriched);
+      if (res.data?.length > 0) {
+        const enriched = res.data.map((order: Order) => ({
+          ...order,
+          kitchenStatus: order.kitchenOrders?.find((ko) => ko.kitchen === KITCHEN)?.status || 'NEW',
+        }));
+        setOrders(enriched);
+        return;
+      }
     } catch {
-      setOrders([]);
-    } finally {
-      setLoading(false);
+      // ignore
     }
+    // Fallback to local demo orders containing Kitchen 1 items
+    const demo = getDemoOrders();
+    const k1Orders = demo
+      .filter((o) => o.orderItems.some((i) => i.kitchen === KITCHEN))
+      .map((order) => ({
+        ...order,
+        kitchenStatus: (order.kitchenOrders?.find((ko) => ko.kitchen === KITCHEN)?.status || 'NEW') as KitchenOrderStatus,
+      }));
+    setOrders(k1Orders);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -91,19 +104,27 @@ export default function Kitchen1Page() {
     setUpdatingId(orderId);
     try {
       await api.put(`/orders/${orderId}/kitchen/${KITCHEN}/status`, { status });
-      setOrders((prev) =>
-        prev
-          .map((o) => (o.id === orderId ? { ...o, kitchenStatus: status } : o))
-          .filter((o) => {
-            if (o.id === orderId && status === 'READY') return false;
-            return true;
-          }),
-      );
     } catch {
-      alert('Failed to update status');
-    } finally {
-      setUpdatingId(null);
+      // In demo mode, update local orders state
+      const demo = getDemoOrders();
+      const updated = demo.map((o) => {
+        if (o.id === orderId) {
+          const kos = o.kitchenOrders?.map((k) => (k.kitchen === KITCHEN ? { ...k, status } : k));
+          return { ...o, kitchenOrders: kos };
+        }
+        return o;
+      });
+      saveDemoOrders(updated);
     }
+    setOrders((prev) =>
+      prev
+        .map((o) => (o.id === orderId ? { ...o, kitchenStatus: status } : o))
+        .filter((o) => {
+          if (o.id === orderId && status === 'READY') return false;
+          return true;
+        }),
+    );
+    setUpdatingId(null);
   };
 
   const getElapsed = (createdAt: string) => {

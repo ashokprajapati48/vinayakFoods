@@ -14,6 +14,8 @@ import {
   Package,
 } from 'lucide-react';
 
+import { getDemoOrders, saveDemoOrders } from '@/lib/mockData';
+
 export default function WaiterPage() {
   const [readyOrders, setReadyOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -22,12 +24,17 @@ export default function WaiterPage() {
   const loadOrders = useCallback(async () => {
     try {
       const res = await api.get('/orders/ready');
-      setReadyOrders(res.data);
+      if (res.data?.length > 0) {
+        setReadyOrders(res.data);
+        return;
+      }
     } catch {
-      setReadyOrders([]);
-    } finally {
-      setLoading(false);
+      // ignore
     }
+    const demo = getDemoOrders();
+    const ready = demo.filter((o) => o.status === 'READY');
+    setReadyOrders(ready);
+    setLoading(false);
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
@@ -55,12 +62,13 @@ export default function WaiterPage() {
     setUpdatingId(orderId);
     try {
       await api.put(`/orders/${orderId}/status`, { status: 'COLLECTED' });
-      setReadyOrders((prev) => prev.filter((o) => o.id !== orderId));
     } catch {
-      alert('Failed to update order');
-    } finally {
-      setUpdatingId(null);
+      const demo = getDemoOrders();
+      const updated = demo.map((o) => (o.id === orderId ? { ...o, status: 'COLLECTED' as const } : o));
+      saveDemoOrders(updated);
     }
+    setReadyOrders((prev) => prev.filter((o) => o.id !== orderId));
+    setUpdatingId(null);
   };
 
   const handleDeliver = async (orderId: string) => {

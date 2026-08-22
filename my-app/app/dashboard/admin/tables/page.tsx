@@ -13,8 +13,10 @@ import {
   Minus,
 } from 'lucide-react';
 
+import { MOCK_TABLES } from '@/lib/mockData';
+
 export default function AdminTablesPage() {
-  const [tables, setTables] = useState<Table[]>([]);
+  const [tables, setTables] = useState<Table[]>(MOCK_TABLES);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editTable, setEditTable] = useState<Table | null>(null);
@@ -26,9 +28,11 @@ export default function AdminTablesPage() {
   const loadTables = useCallback(async () => {
     try {
       const res = await api.get('/tables');
-      setTables(res.data);
+      if (res.data?.length > 0) {
+        setTables(res.data);
+      }
     } catch {
-      setTables([]);
+      setTables(MOCK_TABLES);
     } finally {
       setLoading(false);
     }

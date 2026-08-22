@@ -27,6 +27,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: React.
   CANCELLED: { label: 'Cancelled', color: 'text-red-400 bg-red-500/10 border-red-500/30', icon: <XCircle className="w-3 h-3" /> },
 };
 
+import { getDemoOrders } from '@/lib/mockData';
+
 export default function CashierOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,12 +44,16 @@ export default function CashierOrdersPage() {
         url = `/orders?date=${new Date().toISOString().split('T')[0]}`;
       }
       const res = await api.get(url);
-      setOrders(res.data);
+      if (res.data?.length > 0) {
+        setOrders(res.data);
+        return;
+      }
     } catch {
-      setOrders([]);
-    } finally {
-      setLoading(false);
+      // ignore
     }
+    const demo = getDemoOrders();
+    setOrders(demo);
+    setLoading(false);
   }, [filter]);
 
   useEffect(() => {
