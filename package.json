@@ -3,8 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "npm run dev --prefix my-app",
-    "build": "npm run build --prefix my-app",
-    "start": "npm run start --prefix my-app"
+    "dev": "cd my-app && npm run dev",
+    "build": "cd my-app && npm install && npm run build",
+    "start": "cd my-app && npm run start"
+  },
+  "dependencies": {
+    "next": "16.3.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   }
 }
