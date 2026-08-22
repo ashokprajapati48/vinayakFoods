@@ -20,7 +20,11 @@ export const metadata: Metadata = {
     'Complete restaurant order, kitchen, payment, and business analytics management system.',
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
