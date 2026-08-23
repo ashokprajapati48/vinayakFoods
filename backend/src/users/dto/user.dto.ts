@@ -5,6 +5,7 @@ import {
   MinLength,
   IsOptional,
   IsBoolean,
+  IsStrongPassword,
 } from 'class-validator';
 import { Role } from '../../common/enums';
 
@@ -15,7 +16,13 @@ export class CreateUserDto {
 
   @IsString()
   @IsNotEmpty()
-  @MinLength(4)
+  @IsStrongPassword({
+    minLength: 8,
+    minLowercase: 1,
+    minUppercase: 1,
+    minNumbers: 1,
+    minSymbols: 1,
+  })
   password!: string;
 
   @IsString()
@@ -33,7 +40,13 @@ export class UpdateUserDto {
 
   @IsString()
   @IsOptional()
-  @MinLength(4)
+  @IsStrongPassword({
+    minLength: 8,
+    minLowercase: 1,
+    minUppercase: 1,
+    minNumbers: 1,
+    minSymbols: 1,
+  })
   password?: string;
 
   @IsEnum(Role)

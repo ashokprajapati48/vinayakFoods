@@ -4,6 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import ThemeToggle from '@/components/ThemeToggle';
 import { getRoleLabel } from '@/lib/utils';
 import {
   UtensilsCrossed,
@@ -201,6 +202,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex-1" />
 
           <div className="flex items-center gap-3">
+            <ThemeToggle />
             {isDemo && (
               <span
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs"

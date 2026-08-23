@@ -223,7 +223,9 @@ export const MOCK_MENU_ITEMS: MenuItem[] = RAW_ITEMS.map((item, idx) => {
     price: item.price,
     kitchen: item.kitchen as 'KITCHEN_1' | 'KITCHEN_2',
     categoryId,
-    category: cat,
+    // Mock categories own their menu items below. Do not attach the category back
+    // to each item: offline orders persist menu items in localStorage, and a
+    // bidirectional object graph cannot be JSON-serialized.
     isAvailable: true,
     sortOrder: item.sortOrder,
   };

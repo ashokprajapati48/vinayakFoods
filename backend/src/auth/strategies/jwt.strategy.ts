@@ -6,6 +6,14 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type { JwtPayload } from '../auth.service.js';
 
+function accessTokenFromCookie(request: { headers?: { cookie?: string } }): string | null {
+  const value = request.headers?.cookie
+    ?.split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('access_token='));
+  return value ? value.slice('access_token='.length) : null;
+}
+
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
@@ -13,7 +21,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private prisma: PrismaService,
   ) {
     super({
-      jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
+      // The cookie is the standard browser path. Bearer support remains useful
+      // for non-browser API clients and does not affect browser token secrecy.
+      jwtFromRequest: ExtractJwt.fromExtractors([
+        accessTokenFromCookie,
+        ExtractJwt.fromAuthHeaderAsBearerToken(),
+      ]),
       ignoreExpiration: false,
       secretOrKey: configService.get<string>('JWT_SECRET')!,
     });

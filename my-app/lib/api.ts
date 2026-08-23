@@ -6,41 +6,41 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  // Auth cookies are HttpOnly. The browser sends them, but JavaScript cannot
+  // read or copy them, limiting the impact of an XSS vulnerability.
+  withCredentials: true,
   timeout: 20000,
 });
 
-/** True when the request never reached the server (server down / no network). */
+/**
+ * True when the request never reached the server at all (server down / no network).
+ *
+ * A timeout is deliberately NOT "offline": the server is there, just slow (a cold
+ * Next.js compile, a big query). Treating it as offline used to drop the screen into
+ * demo mode, which then 401s against the live API.
+ */
 export function isOffline(error: unknown): boolean {
   const e = error as { response?: unknown; code?: string };
-  return !e?.response || e.code === 'ECONNABORTED' || e.code === 'ERR_NETWORK';
+  if (e?.response) return false;
+  if (e?.code === 'ECONNABORTED' || e?.code === 'ETIMEDOUT') return false;
+  return true;
 }
 
-/** Best-effort human-readable message from an API error. */
 export function apiErrorMessage(error: unknown, fallback = 'Something went wrong'): string {
   const e = error as {
-    response?: { data?: { message?: string; errors?: string[] } };
+    response?: { status?: number; data?: { message?: string; errors?: string[] } };
     message?: string;
+    code?: string;
   };
   const data = e?.response?.data;
   if (data?.errors?.length) return data.errors.join(', ');
   if (data?.message) return data.message;
+  if (e?.code === 'ECONNABORTED' || e?.code === 'ETIMEDOUT') {
+    return 'The server took too long to answer. Try again.';
+  }
   if (isOffline(error)) return 'Cannot reach the server. Check that the API is running.';
   return e?.message || fallback;
 }
-
-// Request interceptor to add auth token
-api.interceptors.request.use(
-  (config) => {
-    if (typeof window !== 'undefined') {
-      const token = localStorage.getItem('accessToken');
-      if (token) {
-        config.headers.Authorization = `Bearer ${token}`;
-      }
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
 
 // Response interceptor to handle token refresh
 api.interceptors.response.use(
@@ -51,36 +51,28 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && originalRequest && !originalRequest._retry) {
       originalRequest._retry = true;
 
-      // Demo tokens start with 'demo-'. In offline demo mode there is nothing to
-      // refresh, so let the calling screen fall back to local data instead of
-      // wiping the session and bouncing to the login page.
+      // A demo token means this session was created while the API was unreachable.
+      // A 401 proves the API is answering now, so the fake session is a dead end:
+      // clear it and send the user back to a real sign-in instead of leaving the
+      // screen showing "Unauthorized" forever.
       if (typeof window !== 'undefined') {
-        const accessToken = localStorage.getItem('accessToken');
-        if (accessToken?.startsWith('demo-')) {
+        if (localStorage.getItem('demoMode') === 'true') {
+          localStorage.clear();
+          window.location.href = '/?expired=demo';
           return Promise.reject(error);
         }
       }
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken');
-        if (!refreshToken) {
-          localStorage.clear();
-          window.location.href = '/';
-          return Promise.reject(error);
-        }
-
-        const response = await axios.post(`${apiBaseUrl()}/auth/refresh`, {
-          refreshToken,
-        });
-
-        const { accessToken, refreshToken: newRefreshToken } = response.data;
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', newRefreshToken);
+        const response = await axios.post(
+          `${apiBaseUrl()}/auth/refresh`,
+          {},
+          { withCredentials: true },
+        );
         if (response.data.user) {
           localStorage.setItem('user', JSON.stringify(response.data.user));
         }
 
-        originalRequest.headers.Authorization = `Bearer ${accessToken}`;
         return api(originalRequest);
       } catch {
         // Refresh failed, redirect to login

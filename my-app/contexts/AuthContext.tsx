@@ -26,6 +26,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// Demo credentials are useful for local UI development but must never be
+// available in a deployed build.
+const OFFLINE_DEMO_ENABLED = process.env.NODE_ENV !== 'production';
+
 // Offline fallback accounts. Only used when the API cannot be reached at all —
 // a wrong password against a reachable server must never land here.
 const DEMO_USERS: Record<string, { user: User; pass: string }> = {
@@ -60,9 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Restore the stored session on mount.
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
-    const accessToken = localStorage.getItem('accessToken');
-
-    if (!storedUser || !accessToken) {
+    if (!storedUser) {
       setIsLoading(false);
       return;
     }
@@ -77,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     setUser(parsedUser);
-    setIsDemo(accessToken.startsWith('demo-'));
+    const demoMode = localStorage.getItem('demoMode') === 'true';
+    setIsDemo(demoMode);
     try {
       connectSocket(parsedUser.role);
     } catch {
@@ -86,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
 
     // Confirm the token is still valid; refresh the profile if it changed.
-    if (!accessToken.startsWith('demo-')) {
+    if (!demoMode) {
       api
         .get<User>('/auth/me')
         .then(({ data }) => {
@@ -103,15 +106,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (username: string, password: string) => {
       try {
-        const response = await api.post<AuthResponse>('/auth/login', {
-          username: username.trim(),
-          password,
-        });
+        const response = await api.post<AuthResponse>(
+          '/auth/login',
+          { username: username.trim(), password },
+          // The very first request can wait on a cold dev-server compile.
+          { timeout: 45000 },
+        );
 
-        const { user: userData, accessToken, refreshToken } = response.data;
+        const { user: userData } = response.data;
         localStorage.setItem('user', JSON.stringify(userData));
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', refreshToken);
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        localStorage.removeItem('demoMode');
 
         setUser(userData);
         setIsDemo(false);
@@ -130,6 +136,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Server unreachable → allow the documented demo accounts so the UI
         // can still be explored, and make that state visible.
+        if (!OFFLINE_DEMO_ENABLED) {
+          throw new Error('Cannot reach the server. Please try again later.');
+        }
+
         const demo = DEMO_USERS[username.toLowerCase().trim()];
         if (!demo || demo.pass !== password) {
           throw new Error(
@@ -137,10 +147,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           );
         }
 
-        const accessToken = `demo-jwt-token-${demo.user.role.toLowerCase()}`;
         localStorage.setItem('user', JSON.stringify(demo.user));
-        localStorage.setItem('accessToken', accessToken);
-        localStorage.setItem('refreshToken', `demo-refresh-${demo.user.role.toLowerCase()}`);
+        localStorage.setItem('demoMode', 'true');
 
         setUser(demo.user);
         setIsDemo(true);

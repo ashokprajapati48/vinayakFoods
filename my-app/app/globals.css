@@ -40,10 +40,30 @@ html {
   color-scheme: dark;
 }
 
+/* The Tailwind surface tokens are semantic in this app: pages use 950 as the
+   canvas and 100 for primary text. Re-map them in light mode so existing UI
+   utilities (`bg-surface-*`, `text-surface-*`) switch together. */
+html[data-theme='light'] {
+  color-scheme: light;
+  --color-surface-50: #0f172a;
+  --color-surface-100: #172033;
+  --color-surface-200: #334155;
+  --color-surface-300: #475569;
+  --color-surface-400: #64748b;
+  --color-surface-500: #64748b;
+  --color-surface-600: #94a3b8;
+  --color-surface-700: #cbd5e1;
+  --color-surface-800: #e2e8f0;
+  --color-surface-850: #edf2f7;
+  --color-surface-900: #f8fafc;
+  --color-surface-950: #ffffff;
+}
+
 body {
   background: var(--color-surface-950);
   color: var(--color-surface-100);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* ──────────────────────────────────────────────
@@ -81,6 +101,12 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.1);
   backdrop-filter: blur(20px);
   border-radius: 16px;
+}
+
+html[data-theme='light'] .glass-card {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.92), rgba(248, 250, 252, 0.96));
+  border-color: rgba(71, 85, 105, 0.16);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 
 .glass-card-hover {
@@ -129,6 +155,26 @@ body {
   color: var(--color-brand-400);
   background: rgba(249, 115, 22, 0.1);
   border: 1px solid rgba(249, 115, 22, 0.15);
+}
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(148, 163, 184, 0.1);
+  color: var(--color-surface-300);
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.theme-toggle:hover {
+  color: var(--color-brand-500);
+  border-color: rgba(249, 115, 22, 0.35);
+  background: rgba(249, 115, 22, 0.08);
 }
 
 /* ──────────────────────────────────────────────
@@ -230,6 +276,27 @@ body {
 .input-field:focus {
   border-color: var(--color-brand-500);
   box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.1);
+}
+
+html[data-theme='light'] .input-field {
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(71, 85, 105, 0.2);
+}
+
+html[data-theme='light'] .modal-overlay {
+  background: rgba(15, 23, 42, 0.32);
+}
+
+html[data-theme='light'] .data-table th {
+  border-bottom-color: rgba(71, 85, 105, 0.16);
+}
+
+html[data-theme='light'] .data-table td {
+  border-bottom-color: rgba(71, 85, 105, 0.1);
+}
+
+html[data-theme='light'] .data-table tbody tr:hover {
+  background: rgba(148, 163, 184, 0.15);
 }
 
 /* ──────────────────────────────────────────────
