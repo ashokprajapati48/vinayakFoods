@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, sumBy } from '@/lib/utils';
 import type { Staff } from '@/types';
 import {
   UserCog,
@@ -11,7 +12,6 @@ import {
   CheckCircle,
   Phone,
   Edit,
-  DollarSign,
 } from 'lucide-react';
 
 export default function AdminStaffPage() {
@@ -66,14 +66,13 @@ export default function AdminStaffPage() {
       setShowModal(false);
       loadStaff();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to save');
+      alert(apiErrorMessage(err, 'Failed to save staff member'));
     } finally {
       setSaving(false);
     }
   };
 
-  const totalSalary = staff.filter((s) => s.status === 'ACTIVE').reduce((sum, s) => sum + s.salary, 0);
+  const totalSalary = sumBy(staff.filter((s) => s.status === 'ACTIVE'), (s) => s.salary);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -93,7 +92,7 @@ export default function AdminStaffPage() {
         {[
           { label: 'Active Staff', value: staff.filter((s) => s.status === 'ACTIVE').length, color: 'text-emerald-400' },
           { label: 'Total Staff', value: staff.length, color: 'text-blue-400' },
-          { label: 'Monthly Salary', value: `₹${totalSalary.toLocaleString()}`, color: 'text-amber-400' },
+          { label: 'Monthly Salary', value: formatMoney(totalSalary), color: 'text-amber-400' },
         ].map((stat) => (
           <div key={stat.label} className="glass-card p-4">
             <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
@@ -137,7 +136,7 @@ export default function AdminStaffPage() {
                       </span>
                     ) : '—'}
                   </td>
-                  <td className="text-emerald-400 font-bold">₹{member.salary.toLocaleString()}</td>
+                  <td className="text-emerald-400 font-bold">{formatMoney(member.salary)}</td>
                   <td className="text-surface-400 text-sm">
                     {new Date(member.joiningDate).toLocaleDateString()}
                   </td>

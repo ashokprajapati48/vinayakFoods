@@ -78,3 +78,14 @@ export class UpdateOrderStatusDto {
   @IsEnum(OrderStatusEnum)
   status: OrderStatusEnum;
 }
+
+export enum KitchenStatusEnum {
+  NEW = 'NEW',
+  PREPARING = 'PREPARING',
+  READY = 'READY',
+}
+
+export class UpdateKitchenStatusDto {
+  @IsEnum(KitchenStatusEnum)
+  status: KitchenStatusEnum;
+}

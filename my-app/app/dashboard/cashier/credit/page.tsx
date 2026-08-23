@@ -1,15 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, toNum } from '@/lib/utils';
 import type { Customer } from '@/types';
 import {
   Wallet,
-  Search,
   Loader2,
   CheckCircle,
   X,
-  Minus,
 } from 'lucide-react';
 
 interface CreditEntry {
@@ -67,8 +66,7 @@ export default function CreditPage() {
       setPaymentDesc('');
       loadData();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Payment failed');
+      alert(apiErrorMessage(err, 'Payment failed'));
     } finally {
       setPaying(false);
     }
@@ -125,7 +123,7 @@ export default function CreditPage() {
                       {customer.mobile && <p className="text-xs text-surface-500">{customer.mobile}</p>}
                     </div>
                     <div className="text-right">
-                      <p className="font-bold text-amber-400">₹{customer.creditBalance}</p>
+                      <p className="font-bold text-amber-400">{formatMoney(customer.creditBalance)}</p>
                       <p className="text-xs text-surface-500">outstanding</p>
                     </div>
                   </div>
@@ -154,7 +152,7 @@ export default function CreditPage() {
                 {selectedCustomer.mobile && <p className="text-sm text-surface-400">{selectedCustomer.mobile}</p>}
                 <div className="mt-2 flex items-center justify-between">
                   <span className="text-surface-400 text-sm">Outstanding:</span>
-                  <span className="font-bold text-amber-400 text-lg">₹{selectedCustomer.creditBalance}</span>
+                  <span className="font-bold text-amber-400 text-lg">{formatMoney(selectedCustomer.creditBalance)}</span>
                 </div>
               </div>
 
@@ -173,9 +171,9 @@ export default function CreditPage() {
                   />
                   <button
                     className="text-xs text-brand-400 mt-1"
-                    onClick={() => setPaymentAmount(String(selectedCustomer.creditBalance))}
+                    onClick={() => setPaymentAmount(String(toNum(selectedCustomer.creditBalance)))}
                   >
-                    Pay full amount (₹{selectedCustomer.creditBalance})
+                    Pay full amount ({formatMoney(selectedCustomer.creditBalance)})
                   </button>
                 </div>
                 <div>
@@ -242,9 +240,9 @@ export default function CreditPage() {
                       </span>
                     </td>
                     <td className={`font-bold ${entry.type === 'DEBIT' ? 'text-red-400' : 'text-emerald-400'}`}>
-                      {entry.type === 'DEBIT' ? '+' : '-'}₹{entry.amount}
+                      {entry.type === 'DEBIT' ? '+' : '-'}{formatMoney(entry.amount)}
                     </td>
-                    <td className="text-surface-300 font-medium">₹{entry.balanceAfter}</td>
+                    <td className="text-surface-300 font-medium">{formatMoney(entry.balanceAfter)}</td>
                     <td className="text-surface-400 text-sm">{entry.description}</td>
                     <td className="text-surface-500 text-xs">
                       {new Date(entry.createdAt).toLocaleDateString()}

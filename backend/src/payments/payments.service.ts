@@ -1,10 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreatePaymentDto } from './dto/payment.dto.js';
+import { OrdersService } from '../orders/orders.service.js';
+import { EventsGateway } from '../gateway/events.gateway.js';
 
 @Injectable()
 export class PaymentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private ordersService: OrdersService,
+    private eventsGateway: EventsGateway,
+  ) {}
 
   async findAll(filters?: { date?: string; method?: string }) {
     const where: Record<string, unknown> = {};
@@ -42,6 +48,14 @@ export class PaymentsService {
     });
     if (!order) throw new NotFoundException('Order not found');
     if (order.payment) throw new BadRequestException('Order already has a payment');
+    if (order.status === 'CANCELLED') {
+      throw new BadRequestException('Cannot take payment for a cancelled order');
+    }
+    if (dto.method === 'CREDIT' && !order.customerId) {
+      throw new BadRequestException(
+        'Credit payments need a customer on the order',
+      );
+    }
 
     const payment = await this.prisma.$transaction(async (tx) => {
       const newPayment = await tx.payment.create({
@@ -86,6 +100,11 @@ export class PaymentsService {
 
       return newPayment;
     });
+
+    this.eventsGateway.emitPaymentRecorded(payment);
+
+    // A served dine-in order is finished once it is paid: close it and free the table.
+    await this.ordersService.settleAfterPayment(dto.orderId);
 
     return payment;
   }

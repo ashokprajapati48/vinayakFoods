@@ -18,6 +18,11 @@ export class ReportsService {
       pendingOrders,
       kitchen1Active,
       kitchen2Active,
+      readyOrders,
+      kitchen1Done,
+      kitchen2Done,
+      tables,
+      unpaidOrders,
     ] = await Promise.all([
       this.prisma.order.count({
         where: { createdAt: { gte: today, lt: tomorrow } },
@@ -39,7 +44,33 @@ export class ReportsService {
       this.prisma.kitchenOrder.count({
         where: { kitchen: 'KITCHEN_2', status: { in: ['NEW', 'PREPARING'] } },
       }),
+      this.prisma.order.count({ where: { status: 'READY' } }),
+      this.prisma.kitchenOrder.count({
+        where: {
+          kitchen: 'KITCHEN_1',
+          status: 'READY',
+          order: { createdAt: { gte: today, lt: tomorrow } },
+        },
+      }),
+      this.prisma.kitchenOrder.count({
+        where: {
+          kitchen: 'KITCHEN_2',
+          status: 'READY',
+          order: { createdAt: { gte: today, lt: tomorrow } },
+        },
+      }),
+      this.prisma.table.groupBy({ by: ['status'], _count: { id: true } }),
+      this.prisma.order.count({
+        where: {
+          createdAt: { gte: today, lt: tomorrow },
+          payment: null,
+          status: { notIn: ['CANCELLED'] },
+        },
+      }),
     ]);
+
+    const tableCount = (status: string) =>
+      tables.find((t) => t.status === status)?._count.id || 0;
 
     return {
       todayOrders,
@@ -48,6 +79,13 @@ export class ReportsService {
       pendingOrders,
       kitchen1Active,
       kitchen2Active,
+      kitchen1CompletedToday: kitchen1Done,
+      kitchen2CompletedToday: kitchen2Done,
+      readyOrders,
+      unpaidOrders,
+      tablesAvailable: tableCount('AVAILABLE'),
+      tablesOccupied: tableCount('OCCUPIED'),
+      tablesReserved: tableCount('RESERVED'),
     };
   }
 

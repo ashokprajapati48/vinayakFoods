@@ -38,3 +38,9 @@ Thumbs.db
 # Prisma
 *.db
 *.db-journal
+
+.vercel
+.env*
+
+# Local browser-driving / screenshot scripts
+.run/

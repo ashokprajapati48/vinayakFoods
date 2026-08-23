@@ -308,7 +308,7 @@ model Payment {
 model DeliveryInfo {
   id           String         @id @default(uuid())
   orderId      String         @unique @map("order_id")
-  customerId   String         @map("customer_id")
+  customerId   String?        @map("customer_id")
   address      String
   deliveryBoy  String?        @map("delivery_boy")
   phone        String?
@@ -317,9 +317,9 @@ model DeliveryInfo {
   createdAt    DateTime       @default(now()) @map("created_at")
   updatedAt    DateTime       @updatedAt @map("updated_at")
 
-  // Relations
-  order    Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  customer Customer @relation(fields: [customerId], references: [id])
+  // Relations — a walk-in phone order does not need a saved customer record.
+  order    Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  customer Customer? @relation(fields: [customerId], references: [id])
 
   @@map("delivery_info")
 }

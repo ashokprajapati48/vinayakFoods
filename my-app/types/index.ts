@@ -42,6 +42,8 @@ export interface Category {
   sortOrder: number;
   isActive: boolean;
   menuItems?: MenuItem[];
+  /** Present on `GET /menu/categories/all`, which returns counts instead of items. */
+  _count?: { menuItems: number };
 }
 
 export interface MenuItem {
@@ -141,6 +143,8 @@ export interface Payment {
   transactionId?: string;
   recordedBy: string;
   createdAt: string;
+  /** Included by the payments endpoints so lists can show the order/table. */
+  order?: Order;
 }
 
 // ──────────────────────────────────────────────

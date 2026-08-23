@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, sumBy, toNum } from '@/lib/utils';
 import type { Customer } from '@/types';
 import {
-  Users,
   Search,
   Loader2,
   Phone,
@@ -13,13 +13,17 @@ import {
   Edit,
   X,
   CheckCircle,
+  AlertTriangle,
+  Plus,
 } from 'lucide-react';
 
 export default function AdminCustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [editCustomer, setEditCustomer] = useState<Customer | null>(null);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [name, setName] = useState('');
@@ -28,10 +32,14 @@ export default function AdminCustomersPage() {
 
   const loadCustomers = useCallback(async () => {
     try {
-      const res = await api.get(`/customers${search ? `?search=${search}` : ''}`);
-      setCustomers(res.data);
-    } catch {
+      const params = new URLSearchParams({ includeInactive: 'true' });
+      if (search.trim()) params.set('search', search.trim());
+      const res = await api.get<Customer[]>(`/customers?${params.toString()}`);
+      setCustomers(Array.isArray(res.data) ? res.data : []);
+      setError(null);
+    } catch (err) {
       setCustomers([]);
+      setError(apiErrorMessage(err, 'Could not load customers'));
     } finally {
       setLoading(false);
     }
@@ -43,22 +51,45 @@ export default function AdminCustomersPage() {
   }, [loadCustomers]);
 
   const openEdit = (customer: Customer) => {
+    setCreating(false);
     setEditCustomer(customer);
     setName(customer.name);
     setMobile(customer.mobile || '');
     setAddress(customer.address || '');
   };
 
-  const handleUpdate = async () => {
-    if (!editCustomer || !name.trim()) return;
+  const openCreate = () => {
+    setCreating(true);
+    setEditCustomer(null);
+    setName('');
+    setMobile('');
+    setAddress('');
+  };
+
+  const closeDialog = () => {
+    setCreating(false);
+    setEditCustomer(null);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
     setSaving(true);
     try {
-      await api.put(`/customers/${editCustomer.id}`, { name, mobile: mobile || undefined, address: address || undefined });
-      setEditCustomer(null);
+      const body = {
+        name: name.trim(),
+        mobile: mobile.trim() || undefined,
+        address: address.trim() || undefined,
+      };
+      if (editCustomer) {
+        await api.put(`/customers/${editCustomer.id}`, body);
+      } else {
+        await api.post('/customers', body);
+      }
+      closeDialog();
       loadCustomers();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to update');
+      setError(null);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not save the customer'));
     } finally {
       setSaving(false);
     }
@@ -68,15 +99,33 @@ export default function AdminCustomersPage() {
     try {
       await api.put(`/customers/${customer.id}`, { isActive: !customer.isActive });
       loadCustomers();
-    } catch { }
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not update the customer'));
+    }
   };
+
+  const withCredit = customers.filter((c) => toNum(c.creditBalance) > 0);
+  const totalOutstanding = sumBy(customers, (c) => c.creditBalance);
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold text-surface-100">Customer Management</h1>
-        <p className="text-sm text-surface-400 mt-1">View and manage all customer records.</p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-surface-100">Customer Management</h1>
+          <p className="text-sm text-surface-400 mt-1">View and manage all customer records.</p>
+        </div>
+        <button onClick={openCreate} className="btn-primary flex items-center gap-2 text-sm">
+          <Plus className="w-4 h-4" />
+          Add Customer
+        </button>
       </div>
+
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -85,12 +134,12 @@ export default function AdminCustomersPage() {
           <p className="text-sm text-surface-400 mt-1">Active Customers</p>
         </div>
         <div className="glass-card p-4">
-          <p className="text-2xl font-bold text-amber-400">{customers.filter((c) => c.creditBalance > 0).length}</p>
+          <p className="text-2xl font-bold text-amber-400">{withCredit.length}</p>
           <p className="text-sm text-surface-400 mt-1">With Outstanding Credit</p>
         </div>
         <div className="glass-card p-4">
           <p className="text-2xl font-bold text-red-400">
-            ₹{customers.reduce((sum, c) => sum + c.creditBalance, 0).toFixed(0)}
+            {formatMoney(totalOutstanding)}
           </p>
           <p className="text-sm text-surface-400 mt-1">Total Outstanding</p>
         </div>
@@ -135,8 +184,8 @@ export default function AdminCustomersPage() {
                     ) : '—'}
                   </td>
                   <td>
-                    {customer.creditBalance > 0 ? (
-                      <span className="flex items-center gap-1 text-amber-400 font-bold text-sm"><Wallet className="w-3 h-3" />₹{customer.creditBalance}</span>
+                    {toNum(customer.creditBalance) > 0 ? (
+                      <span className="flex items-center gap-1 text-amber-400 font-bold text-sm"><Wallet className="w-3 h-3" />{formatMoney(customer.creditBalance)}</span>
                     ) : <span className="text-emerald-400 text-sm">Clear</span>}
                   </td>
                   <td className="text-surface-500 text-xs">{new Date(customer.createdAt).toLocaleDateString()}</td>
@@ -159,13 +208,15 @@ export default function AdminCustomersPage() {
         </div>
       )}
 
-      {/* Edit Modal */}
-      {editCustomer && (
-        <div className="modal-overlay" onClick={() => setEditCustomer(null)}>
+      {/* Create / Edit Modal */}
+      {(editCustomer || creating) && (
+        <div className="modal-overlay" onClick={closeDialog}>
           <div className="modal-content glass-card p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-surface-100">Edit Customer</h2>
-              <button onClick={() => setEditCustomer(null)} className="text-surface-500 hover:text-surface-300"><X className="w-5 h-5" /></button>
+              <h2 className="text-lg font-bold text-surface-100">
+                {editCustomer ? 'Edit Customer' : 'New Customer'}
+              </h2>
+              <button onClick={closeDialog} className="text-surface-500 hover:text-surface-300"><X className="w-5 h-5" /></button>
             </div>
             <div className="space-y-3">
               <div>
@@ -182,8 +233,8 @@ export default function AdminCustomersPage() {
               </div>
             </div>
             <div className="flex gap-3 mt-5">
-              <button onClick={() => setEditCustomer(null)} className="btn-secondary flex-1 text-sm">Cancel</button>
-              <button onClick={handleUpdate} disabled={saving || !name.trim()} className="btn-primary flex-1 text-sm flex items-center justify-center gap-2">
+              <button onClick={closeDialog} className="btn-secondary flex-1 text-sm">Cancel</button>
+              <button onClick={handleSave} disabled={saving || !name.trim()} className="btn-primary flex-1 text-sm flex items-center justify-center gap-2 disabled:opacity-60">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {saving ? 'Saving...' : 'Save'}
               </button>

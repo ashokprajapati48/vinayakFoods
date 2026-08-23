@@ -1,4 +1,4 @@
-import type { Category, MenuItem, Table, Customer, Order, Role } from '@/types';
+import type { Category, MenuItem, Table, Customer, Order } from '@/types';
 
 export const MOCK_CATEGORIES: Category[] = [
   { id: 'cat-1', name: 'Breakfast (Veg)', sortOrder: 1, isActive: true },
@@ -337,9 +337,10 @@ export function getDemoOrders(): Order[] {
   const stored = localStorage.getItem('demo_orders');
   if (stored) {
     try {
-      return JSON.parse(stored);
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) return parsed as Order[];
     } catch {
-      // ignore
+      // Corrupt payload — start over from the seed data.
     }
   }
   localStorage.setItem('demo_orders', JSON.stringify(MOCK_INITIAL_ORDERS));
@@ -350,4 +351,92 @@ export function saveDemoOrders(orders: Order[]): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem('demo_orders', JSON.stringify(orders));
   }
+}
+
+export interface DemoOrderInput {
+  type: 'DINE_IN' | 'DELIVERY';
+  items: { menuItem: MenuItem; quantity: number; notes?: string }[];
+  table?: Table;
+  customer?: Customer;
+  notes?: string;
+  deliveryAddress?: string;
+  deliveryPhone?: string;
+  createdBy?: string;
+}
+
+/**
+ * Builds an offline order that behaves like a real one: only the kitchens that
+ * actually have items get a ticket, and everything starts at NEW so the kitchen
+ * screens can walk it through NEW → PREPARING → READY.
+ */
+export function buildDemoOrder(input: DemoOrderInput): Order {
+  const existing = getDemoOrders();
+  const orderId = `ord-demo-${Date.now()}`;
+  const stamp = new Date().toISOString();
+  const subtotal = input.items.reduce(
+    (sum, item) => sum + Number(item.menuItem.price) * item.quantity,
+    0,
+  );
+
+  const orderItems = input.items.map((item, index) => ({
+    id: `${orderId}-item-${index + 1}`,
+    orderId,
+    menuItemId: item.menuItem.id,
+    menuItem: item.menuItem,
+    quantity: item.quantity,
+    unitPrice: Number(item.menuItem.price),
+    totalPrice: Number(item.menuItem.price) * item.quantity,
+    kitchen: item.menuItem.kitchen,
+    kitchenStatus: 'NEW' as const,
+    notes: item.notes || undefined,
+  }));
+
+  const kitchens = [...new Set(orderItems.map((item) => item.kitchen))];
+
+  return {
+    id: orderId,
+    orderNumber:
+      existing.reduce((max, order) => Math.max(max, order.orderNumber), 100) + 1,
+    type: input.type,
+    status: 'NEW',
+    tableId: input.table?.id,
+    table: input.table,
+    customerId: input.customer?.id,
+    customer: input.customer,
+    subtotal,
+    total: subtotal,
+    notes: input.notes || undefined,
+    createdBy: input.createdBy || 'demo-cashier-id',
+    createdAt: stamp,
+    updatedAt: stamp,
+    orderItems,
+    kitchenOrders: kitchens.map((kitchen, index) => ({
+      id: `${orderId}-ko-${index + 1}`,
+      orderId,
+      kitchen,
+      status: 'NEW' as const,
+    })),
+    deliveryInfo:
+      input.type === 'DELIVERY' && input.deliveryAddress
+        ? {
+            id: `${orderId}-delivery`,
+            orderId,
+            customerId: input.customer?.id || '',
+            address: input.deliveryAddress,
+            phone: input.deliveryPhone,
+            status: 'PENDING' as const,
+          }
+        : undefined,
+  };
+}
+
+/** Offline stand-in for `GET /customers?search=` */
+export function searchDemoCustomers(query: string): Customer[] {
+  const term = query.trim().toLowerCase();
+  if (!term) return [];
+  return MOCK_CUSTOMERS.filter(
+    (customer) =>
+      customer.name.toLowerCase().includes(term) ||
+      (customer.mobile || '').includes(term),
+  ).slice(0, 5);
 }

@@ -100,7 +100,7 @@ export default function LoginPage() {
             <UtensilsCrossed className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-3xl font-bold gradient-text mb-2">
-            RestaurantOS
+            VINAYAK FOODS
           </h1>
           <p className="text-surface-400 text-sm">
             Restaurant Management System
@@ -211,7 +211,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-surface-600 text-xs mt-6">
-          © 2026 RestaurantOS — All rights reserved
+          © 2026 VINAYAK FOODS — All rights reserved
         </p>
       </div>
     </div>

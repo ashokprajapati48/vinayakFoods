@@ -1,34 +1,38 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { useOrderEvents } from '@/lib/realtime';
+import { formatMoney, sumBy } from '@/lib/utils';
 import type { Payment } from '@/types';
 import {
-  CreditCard,
   Calendar,
   Loader2,
   Banknote,
   Smartphone,
   Wallet,
   TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function AdminPaymentsPage() {
-  const [payments, setPayments] = useState<(Payment & { order?: any })[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
-  const [summary, setSummary] = useState<{ method: string; _sum: { amount: number }; _count: { id: number } }[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [dateFilter, setDateFilter] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+      .toISOString()
+      .split('T')[0];
+  });
 
   const loadData = useCallback(async () => {
     try {
-      const [paymentsRes, summaryRes] = await Promise.all([
-        api.get(`/payments?date=${dateFilter}`),
-        api.get('/payments/summary/today'),
-      ]);
-      setPayments(paymentsRes.data);
-      setSummary(summaryRes.data);
-    } catch {
-      //
+      const res = await api.get<Payment[]>(`/payments?date=${dateFilter}`);
+      setPayments(Array.isArray(res.data) ? res.data : []);
+      setError(null);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not load payments'));
     } finally {
       setLoading(false);
     }
@@ -36,7 +40,12 @@ export default function AdminPaymentsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const totalRevenue = payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  useOrderEvents({
+    onPayment: () => loadData(),
+    onReconnect: () => loadData(),
+  });
+
+  const totalRevenue = sumBy(payments, (p) => p.amount);
 
   const methodStats = [
     { key: 'CASH', label: 'Cash', icon: <Banknote className="w-5 h-5" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
@@ -62,18 +71,25 @@ export default function AdminPaymentsPage() {
         </div>
       </div>
 
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {methodStats.map((method) => {
           const methodPayments = payments.filter((p) => p.method === method.key);
-          const methodTotal = methodPayments.reduce((sum, p) => sum + Number(p.amount), 0);
+          const methodTotal = sumBy(methodPayments, (p) => p.amount);
           return (
             <div key={method.key} className={`glass-card p-4 border ${method.bg}`}>
               <div className="flex items-center gap-3 mb-2">
                 <div className={method.color}>{method.icon}</div>
                 <span className="text-surface-300 font-medium">{method.label}</span>
               </div>
-              <p className={`text-2xl font-bold ${method.color}`}>₹{methodTotal.toFixed(0)}</p>
+              <p className={`text-2xl font-bold ${method.color}`}>{formatMoney(methodTotal)}</p>
               <p className="text-xs text-surface-500 mt-1">{methodPayments.length} transactions</p>
             </div>
           );
@@ -86,7 +102,7 @@ export default function AdminPaymentsPage() {
           <TrendingUp className="w-5 h-5" />
         </div>
         <div>
-          <p className="text-3xl font-bold text-brand-400">₹{totalRevenue.toFixed(0)}</p>
+          <p className="text-3xl font-bold text-brand-400">{formatMoney(totalRevenue)}</p>
           <p className="text-sm text-surface-400">Total Revenue for {new Date(dateFilter).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
       </div>
@@ -120,7 +136,7 @@ export default function AdminPaymentsPage() {
                   <tr key={payment.id}>
                     <td className="font-bold text-surface-100">#{payment.order?.orderNumber || '—'}</td>
                     <td className="text-surface-400 text-sm">{payment.order?.customer?.name || '—'}</td>
-                    <td className="font-bold text-brand-400">₹{payment.amount}</td>
+                    <td className="font-bold text-brand-400">{formatMoney(payment.amount)}</td>
                     <td>
                       <span className={`text-xs font-semibold ${
                         payment.method === 'CASH' ? 'text-emerald-400' :

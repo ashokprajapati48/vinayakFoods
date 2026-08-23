@@ -1,34 +1,66 @@
 import { io, Socket } from 'socket.io-client';
-
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
+import { socketUrl } from './config';
 
 let socket: Socket | null = null;
 
+function storedRole(): string | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const raw = localStorage.getItem('user');
+    if (!raw) return undefined;
+    return (JSON.parse(raw) as { role?: string }).role;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Single shared connection. Pages get it through `useOrderEvents`; the auth
+ * context connects it as soon as a user is known.
+ */
 export function getSocket(role?: string): Socket {
   if (!socket) {
-    socket = io(SOCKET_URL, {
-      query: role ? { role } : undefined,
+    const activeRole = role || storedRole();
+    socket = io(socketUrl(), {
+      query: activeRole ? { role: activeRole } : undefined,
       autoConnect: false,
       reconnection: true,
       reconnectionDelay: 1000,
-      reconnectionAttempts: 10,
+      // Keep retrying: a kitchen screen left open overnight must recover on its own.
+      reconnectionDelayMax: 10000,
+      reconnectionAttempts: Infinity,
+      timeout: 8000,
     });
+
+    if (typeof window !== 'undefined') {
+      // Handy for debugging from the browser console.
+      (window as unknown as { __socket?: Socket }).__socket = socket;
+    }
   }
   return socket;
 }
 
-export function connectSocket(role: string): Socket {
+export function connectSocket(role?: string): Socket {
   const s = getSocket(role);
-  if (!s.connected) {
-    s.io.opts.query = { role };
-    s.connect();
+  const activeRole = role || storedRole();
+  if (activeRole) {
+    s.io.opts.query = { role: activeRole };
   }
+  if (!s.connected) s.connect();
   return s;
 }
 
 export function disconnectSocket(): void {
   if (socket) {
+    socket.removeAllListeners();
     socket.disconnect();
     socket = null;
+    if (typeof window !== 'undefined') {
+      delete (window as unknown as { __socket?: Socket }).__socket;
+    }
   }
+}
+
+export function isSocketConnected(): boolean {
+  return Boolean(socket?.connected);
 }

@@ -2,17 +2,19 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { useOrderEvents } from '@/lib/realtime';
+import { formatMoney, getOrderStatusLabel } from '@/lib/utils';
 import type { Order, Payment } from '@/types';
 import {
   CreditCard,
   CheckCircle,
   Loader2,
-  Search,
   Banknote,
   Smartphone,
   Wallet,
   Clock,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function CashierPaymentsPage() {
@@ -27,26 +29,35 @@ export default function CashierPaymentsPage() {
   const [transactionId, setTransactionId] = useState('');
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
+      const today = (() => {
+        const now = new Date();
+        return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+          .toISOString()
+          .split('T')[0];
+      })();
+
       const [ordersRes, paymentsRes] = await Promise.all([
-        api.get(`/orders?date=${new Date().toISOString().split('T')[0]}`),
-        api.get(`/payments?date=${new Date().toISOString().split('T')[0]}`),
+        api.get<Order[]>(`/orders?date=${today}`),
+        api.get<Payment[]>(`/payments?date=${today}`),
       ]);
 
-      const unpaid = ordersRes.data.filter(
-        (o: Order) => !o.payment && o.status !== 'CANCELLED',
+      const orders = Array.isArray(ordersRes.data) ? ordersRes.data : [];
+      setUnpaidOrders(
+        orders.filter((o) => !o.payment && o.status !== 'CANCELLED'),
       );
-      setUnpaidOrders(unpaid);
-      setRecentPayments(paymentsRes.data);
+      setRecentPayments(Array.isArray(paymentsRes.data) ? paymentsRes.data : []);
 
       if (preselectedOrderId) {
-        const order = ordersRes.data.find((o: Order) => o.id === preselectedOrderId);
+        const order = orders.find((o) => o.id === preselectedOrderId);
         if (order) setSelectedOrder(order);
       }
-    } catch {
-      //
+      setError(null);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not load orders and payments'));
     } finally {
       setLoading(false);
     }
@@ -54,24 +65,32 @@ export default function CashierPaymentsPage() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Keep the pending list in step with the kitchen and other terminals.
+  useOrderEvents({
+    onNewOrder: () => loadData(),
+    onStatusUpdate: () => loadData(),
+    onPayment: () => loadData(),
+    onReconnect: () => loadData(),
+  });
+
   const handlePayment = async () => {
     if (!selectedOrder) return;
     setProcessing(true);
     setSuccess(false);
+    setError(null);
     try {
       await api.post('/payments', {
         orderId: selectedOrder.id,
         amount: selectedOrder.total,
         method: paymentMethod,
-        transactionId: transactionId || undefined,
+        transactionId: transactionId.trim() || undefined,
       });
       setSuccess(true);
       setSelectedOrder(null);
       setTransactionId('');
       loadData();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Payment failed');
+      setError(apiErrorMessage(err, 'Payment failed'));
     } finally {
       setProcessing(false);
     }
@@ -93,7 +112,17 @@ export default function CashierPaymentsPage() {
       {success && (
         <div className="glass-card p-4 border border-emerald-500/30 flex items-center gap-3">
           <CheckCircle className="w-5 h-5 text-emerald-400" />
-          <p className="text-emerald-400 font-medium">Payment processed successfully!</p>
+          <p className="text-emerald-400 font-medium">
+            Payment recorded. Dine-in tables are freed automatically once the order is
+            served.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
         </div>
       )}
 
@@ -126,14 +155,15 @@ export default function CashierPaymentsPage() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-bold text-surface-100">#{order.orderNumber}</p>
-                  <p className="font-bold text-brand-400">₹{order.total}</p>
+                  <p className="font-bold text-brand-400">{formatMoney(order.total)}</p>
                 </div>
                 <p className="text-xs text-surface-400">
-                  {order.type === 'DINE_IN' ? `Table ${order.table?.number}` : 'Delivery'}
+                  {order.type === 'DINE_IN' ? `Table ${order.table?.number ?? '—'}` : 'Delivery'}
                   {order.customer ? ` • ${order.customer.name}` : ''}
                 </p>
                 <p className="text-xs text-surface-500 mt-1">
-                  {order.orderItems.length} items
+                  {order.orderItems.length} items ·{' '}
+                  {getOrderStatusLabel(order.status, order.type)}
                 </p>
               </div>
             ))
@@ -157,12 +187,12 @@ export default function CashierPaymentsPage() {
                 {selectedOrder.orderItems.map((item) => (
                   <div key={item.id} className="flex justify-between text-sm py-1">
                     <span className="text-surface-300">{item.quantity}× {item.menuItem?.name}</span>
-                    <span className="text-surface-400">₹{item.totalPrice}</span>
+                    <span className="text-surface-400">{formatMoney(item.totalPrice)}</span>
                   </div>
                 ))}
                 <div className="border-t border-surface-700/50 pt-2 mt-2 flex justify-between font-bold">
                   <span className="text-surface-200">Total</span>
-                  <span className="text-brand-400 text-lg">₹{selectedOrder.total}</span>
+                  <span className="text-brand-400 text-lg">{formatMoney(selectedOrder.total)}</span>
                 </div>
               </div>
 
@@ -207,7 +237,7 @@ export default function CashierPaymentsPage() {
                 <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30">
                   <p className="text-xs text-amber-400">
                     Credit balance will be added to <strong>{selectedOrder.customer.name}</strong>&apos;s account.
-                    Current balance: ₹{selectedOrder.customer.creditBalance}
+                    Current balance: {formatMoney(selectedOrder.customer.creditBalance)}
                   </p>
                 </div>
               )}
@@ -230,7 +260,7 @@ export default function CashierPaymentsPage() {
                 ) : (
                   <CheckCircle className="w-4 h-4" />
                 )}
-                {processing ? 'Processing...' : `Collect ₹${selectedOrder.total}`}
+                {processing ? 'Processing...' : `Collect ${formatMoney(selectedOrder.total)}`}
               </button>
             </div>
           ) : (
@@ -264,9 +294,9 @@ export default function CashierPaymentsPage() {
                 {recentPayments.map((payment) => (
                   <tr key={payment.id}>
                     <td className="font-medium text-surface-200">
-                      #{(payment as any).order?.orderNumber || '—'}
+                      #{payment.order?.orderNumber || '—'}
                     </td>
-                    <td className="text-brand-400 font-bold">₹{payment.amount}</td>
+                    <td className="text-brand-400 font-bold">{formatMoney(payment.amount)}</td>
                     <td>
                       <span className={`text-xs font-semibold ${
                         payment.method === 'CASH' ? 'text-emerald-400' :

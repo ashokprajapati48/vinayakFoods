@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, sumBy } from '@/lib/utils';
 import type { Staff } from '@/types';
 import {
   DollarSign,
@@ -81,8 +82,7 @@ export default function AdminSalariesPage() {
       setShowModal(false);
       loadData();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to record salary');
+      alert(apiErrorMessage(err, 'Failed to record salary'));
     } finally {
       setSaving(false);
     }
@@ -90,7 +90,7 @@ export default function AdminSalariesPage() {
 
   const paidStaffIds = payments.map((p) => p.staffId);
   const unpaidStaff = staff.filter((s) => !paidStaffIds.includes(s.id));
-  const totalPaid = payments.reduce((sum, p) => sum + p.amount, 0);
+  const totalPaid = sumBy(payments, (p) => p.amount);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -115,12 +115,17 @@ export default function AdminSalariesPage() {
           {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
         <div className="ml-auto">
-          <p className="text-xl font-bold text-emerald-400">₹{totalPaid.toLocaleString()}</p>
+          <p className="text-xl font-bold text-emerald-400">{formatMoney(totalPaid)}</p>
           <p className="text-xs text-surface-400">Paid this month ({payments.length}/{staff.length} staff)</p>
         </div>
       </div>
 
       {/* Status Grid */}
+      {loading ? (
+        <div className="flex items-center justify-center h-48">
+          <Loader2 className="w-7 h-7 animate-spin text-brand-400" />
+        </div>
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Paid */}
         <div>
@@ -135,7 +140,7 @@ export default function AdminSalariesPage() {
                   <p className="text-xs text-surface-500">{p.staff?.role}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-emerald-400">₹{p.amount.toLocaleString()}</p>
+                  <p className="font-bold text-emerald-400">{formatMoney(p.amount)}</p>
                   <p className="text-xs text-surface-500">{p.paymentMethod}</p>
                 </div>
               </div>
@@ -161,7 +166,7 @@ export default function AdminSalariesPage() {
                   <p className="text-xs text-surface-500">{s.role}</p>
                 </div>
                 <div className="text-right">
-                  <p className="font-bold text-amber-400">₹{Number(s.salary).toLocaleString()}</p>
+                  <p className="font-bold text-amber-400">{formatMoney(s.salary)}</p>
                   <button
                     onClick={() => {
                       setStaffId(s.id);
@@ -178,12 +183,17 @@ export default function AdminSalariesPage() {
             {unpaidStaff.length === 0 && (
               <div className="glass-card p-6 text-center">
                 <CheckCircle className="w-8 h-8 text-emerald-400 mx-auto mb-2" />
-                <p className="text-surface-400 text-sm">All staff paid!</p>
+                <p className="text-surface-400 text-sm">
+                  {staff.length === 0
+                    ? 'No active staff yet — add them under Staff.'
+                    : 'All staff paid!'}
+                </p>
               </div>
             )}
           </div>
         </div>
       </div>
+      )}
 
       {/* Modal */}
       {showModal && (

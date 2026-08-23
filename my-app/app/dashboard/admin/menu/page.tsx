@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney } from '@/lib/utils';
 import type { Category, MenuItem } from '@/types';
 import {
   ClipboardList,
@@ -98,8 +99,7 @@ export default function AdminMenuPage() {
       setShowItemModal(false);
       loadData();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to save item');
+      alert(apiErrorMessage(err, 'Failed to save item'));
     } finally {
       setSaving(false);
     }
@@ -109,8 +109,8 @@ export default function AdminMenuPage() {
     try {
       await api.put(`/menu/items/${item.id}`, { isAvailable: !item.isAvailable });
       loadData();
-    } catch {
-      //
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Could not change availability'));
     }
   };
 
@@ -119,8 +119,8 @@ export default function AdminMenuPage() {
     try {
       await api.delete(`/menu/items/${itemId}`);
       loadData();
-    } catch {
-      //
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Could not deactivate the item'));
     }
   };
 
@@ -128,13 +128,12 @@ export default function AdminMenuPage() {
     if (!catName.trim()) return;
     setCreatingCat(true);
     try {
-      await api.post('/menu/categories', { name: catName });
+      await api.post('/menu/categories', { name: catName.trim() });
       setCatName('');
       setShowCatModal(false);
       loadData();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to create category');
+      alert(apiErrorMessage(err, 'Failed to create category'));
     } finally {
       setCreatingCat(false);
     }
@@ -188,7 +187,7 @@ export default function AdminMenuPage() {
                 >
                   <p>{cat.name}</p>
                   <p className="text-xs text-surface-600">
-                    {(cat as any)._count?.menuItems || cat.menuItems?.length || 0} items
+                    {cat._count?.menuItems ?? cat.menuItems?.length ?? 0} items
                   </p>
                 </button>
               ))}
@@ -233,7 +232,7 @@ export default function AdminMenuPage() {
                             <p className="text-xs text-surface-500">{item.description}</p>
                           )}
                         </td>
-                        <td className="text-brand-400 font-bold">₹{item.price}</td>
+                        <td className="text-brand-400 font-bold">{formatMoney(item.price)}</td>
                         <td>
                           <span className={`text-xs px-2 py-1 rounded-lg font-semibold ${
                             item.kitchen === 'KITCHEN_1'

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import api from '@/lib/api';
-import type { Category, MenuItem, Table, Customer, CreateOrderDto, Order } from '@/types';
+import api, { apiErrorMessage, isOffline } from '@/lib/api';
+import { formatMoney, toNum } from '@/lib/utils';
+import type { Category, MenuItem, Table, Customer, CreateOrderDto } from '@/types';
 import {
   ShoppingCart,
   Plus,
@@ -12,13 +13,14 @@ import {
   X,
   Search,
   ChefHat,
-  MapPin,
   Truck,
   Users,
-  CreditCard,
   Loader2,
   CheckCircle,
   TableProperties,
+  AlertTriangle,
+  WifiOff,
+  StickyNote,
 } from 'lucide-react';
 
 interface CartItem {
@@ -31,8 +33,10 @@ import {
   MOCK_CATEGORIES,
   MOCK_TABLES,
   MOCK_CUSTOMERS,
+  buildDemoOrder,
   getDemoOrders,
   saveDemoOrders,
+  searchDemoCustomers,
 } from '@/lib/mockData';
 
 export default function NewOrderPage() {
@@ -40,12 +44,13 @@ export default function NewOrderPage() {
   const router = useRouter();
 
   // Data
-  const [categories, setCategories] = useState<Category[]>(MOCK_CATEGORIES);
-  const [tables, setTables] = useState<Table[]>(MOCK_TABLES);
-  const [customers, setCustomers] = useState<Customer[]>(MOCK_CUSTOMERS);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [tables, setTables] = useState<Table[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [offline, setOffline] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Order config
   const [orderType, setOrderType] = useState<'DINE_IN' | 'DELIVERY'>('DINE_IN');
@@ -56,76 +61,86 @@ export default function NewOrderPage() {
   const [deliveryPhone, setDeliveryPhone] = useState('');
 
   // Menu
-  const [activeCategory, setActiveCategory] = useState(MOCK_CATEGORIES[0]?.id || '');
+  const [activeCategory, setActiveCategory] = useState('');
   const [menuSearch, setMenuSearch] = useState('');
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [notesFor, setNotesFor] = useState<string | null>(null);
 
   // Customer search
   const [customerSearch, setCustomerSearch] = useState('');
   const [customerResults, setCustomerResults] = useState<Customer[]>([]);
   const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
+  const [pickedCustomer, setPickedCustomer] = useState<Customer | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [catRes, tableRes] = await Promise.all([
-        api.get('/menu/categories'),
-        api.get('/tables'),
+        api.get<Category[]>('/menu/categories'),
+        api.get<Table[]>('/tables'),
       ]);
-      if (catRes.data?.length > 0) setCategories(catRes.data);
-      if (tableRes.data?.length > 0) setTables(tableRes.data);
-      if (catRes.data?.length > 0) {
-        setActiveCategory(catRes.data[0].id);
-      }
-    } catch {
-      // Fallback to official offline mock menu and tables
-      setCategories(MOCK_CATEGORIES);
-      setTables(MOCK_TABLES);
-      setCustomers(MOCK_CUSTOMERS);
-      if (MOCK_CATEGORIES.length > 0) {
-        setActiveCategory(MOCK_CATEGORIES[0].id);
+      const cats = (catRes.data || []).filter((c) => (c.menuItems?.length || 0) > 0);
+      setCategories(cats);
+      setTables(tableRes.data || []);
+      setActiveCategory((current) =>
+        cats.some((c) => c.id === current) ? current : cats[0]?.id || '',
+      );
+      setOffline(false);
+      setError(null);
+    } catch (err) {
+      if (isOffline(err)) {
+        // No server: let the counter keep taking orders on local data.
+        setOffline(true);
+        setError(null);
+        setCategories(MOCK_CATEGORIES);
+        setTables(MOCK_TABLES);
+        setActiveCategory((current) => current || MOCK_CATEGORIES[0]?.id || '');
+      } else {
+        setError(apiErrorMessage(err, 'Could not load the menu'));
       }
     } finally {
       setLoading(false);
     }
-  };
-
-  const searchCustomers = useCallback(async (query: string) => {
-    if (!query.trim()) {
-      setCustomerResults([]);
-      return;
-    }
-    try {
-      const res = await api.get(`/customers?search=${query}`);
-      setCustomerResults(res.data.slice(0, 5));
-    } catch {
-      setCustomerResults([]);
-    }
   }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const searchCustomers = useCallback(
+    async (query: string) => {
+      if (!query.trim()) {
+        setCustomerResults([]);
+        return;
+      }
+      try {
+        const res = await api.get<Customer[]>(
+          `/customers?search=${encodeURIComponent(query.trim())}`,
+        );
+        setCustomerResults((res.data || []).slice(0, 5));
+      } catch (err) {
+        setCustomerResults(isOffline(err) ? searchDemoCustomers(query) : []);
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     const t = setTimeout(() => searchCustomers(customerSearch), 300);
     return () => clearTimeout(t);
   }, [customerSearch, searchCustomers]);
 
-  const selectedCustomerData = customers.find((c) => c.id === selectedCustomer) ||
-    customerResults.find((c) => c.id === selectedCustomer);
+  const allMenuItems = useMemo(
+    () => categories.flatMap((c) => c.menuItems || []),
+    [categories],
+  );
 
-  const allMenuItems = categories.flatMap((c) => c.menuItems || []);
-  const displayItems = (() => {
-    let items = activeCategory === 'all'
-      ? allMenuItems
-      : (categories.find((c) => c.id === activeCategory)?.menuItems || []);
-    if (menuSearch) {
-      items = allMenuItems.filter((item) =>
-        item.name.toLowerCase().includes(menuSearch.toLowerCase()),
-      );
+  const displayItems = useMemo(() => {
+    if (menuSearch.trim()) {
+      const term = menuSearch.trim().toLowerCase();
+      return allMenuItems.filter((item) => item.name.toLowerCase().includes(term));
     }
-    return items;
-  })();
+    return categories.find((c) => c.id === activeCategory)?.menuItems || [];
+  }, [menuSearch, allMenuItems, categories, activeCategory]);
 
   const addToCart = (item: MenuItem) => {
     setCart((prev) => {
@@ -149,76 +164,111 @@ export default function NewOrderPage() {
     );
   };
 
+  const setItemNotes = (itemId: string, notes: string) => {
+    setCart((prev) =>
+      prev.map((c) => (c.menuItem.id === itemId ? { ...c, notes } : c)),
+    );
+  };
+
   const removeFromCart = (itemId: string) => {
     setCart((prev) => prev.filter((c) => c.menuItem.id !== itemId));
   };
 
-  const cartTotal = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
+  const cartTotal = cart.reduce(
+    (sum, c) => sum + toNum(c.menuItem.price) * c.quantity,
+    0,
+  );
+  const kitchenSplit = cart.reduce(
+    (acc, c) => {
+      if (c.menuItem.kitchen === 'KITCHEN_1') acc.k1 += c.quantity;
+      else acc.k2 += c.quantity;
+      return acc;
+    },
+    { k1: 0, k2: 0 },
+  );
+
+  const validationError = (): string | null => {
+    if (cart.length === 0) return 'Add at least one item.';
+    if (orderType === 'DINE_IN' && !selectedTable)
+      return 'Select a table for dine-in orders.';
+    if (orderType === 'DELIVERY' && !deliveryAddress.trim())
+      return 'Enter a delivery address.';
+    return null;
+  };
+
+  const resetForm = () => {
+    setCart([]);
+    setOrderNotes('');
+    setSelectedTable('');
+    setSelectedCustomer('');
+    setPickedCustomer(null);
+    setCustomerSearch('');
+    setDeliveryAddress('');
+    setDeliveryPhone('');
+  };
 
   const handleSubmit = async () => {
-    if (cart.length === 0) return;
-    if (orderType === 'DINE_IN' && !selectedTable) {
-      alert('Please select a table for dine-in orders');
+    const invalid = validationError();
+    if (invalid) {
+      setError(invalid);
       return;
     }
 
     setSubmitting(true);
-    try {
-      const payload: CreateOrderDto = {
-        type: orderType,
-        tableId: orderType === 'DINE_IN' ? selectedTable : undefined,
-        customerId: selectedCustomer || undefined,
-        items: cart.map((c) => ({
-          menuItemId: c.menuItem.id,
-          quantity: c.quantity,
-          notes: c.notes || undefined,
-        })),
-        notes: orderNotes || undefined,
-        deliveryAddress: orderType === 'DELIVERY' ? deliveryAddress : undefined,
-        deliveryPhone: orderType === 'DELIVERY' ? deliveryPhone : undefined,
-      };
+    setError(null);
 
+    const payload: CreateOrderDto = {
+      type: orderType,
+      tableId: orderType === 'DINE_IN' ? selectedTable : undefined,
+      customerId: selectedCustomer || undefined,
+      items: cart.map((c) => ({
+        menuItemId: c.menuItem.id,
+        quantity: c.quantity,
+        notes: c.notes.trim() || undefined,
+      })),
+      notes: orderNotes.trim() || undefined,
+      deliveryAddress:
+        orderType === 'DELIVERY' ? deliveryAddress.trim() : undefined,
+      deliveryPhone:
+        orderType === 'DELIVERY' && deliveryPhone.trim()
+          ? deliveryPhone.trim()
+          : undefined,
+    };
+
+    try {
       await api.post('/orders', payload);
       setSuccess(true);
-      setTimeout(() => router.push('/dashboard/cashier/orders'), 1500);
-    } catch {
-      // In demo mode without backend, create local order
-      const existing = getDemoOrders();
-      const newOrderNum = 100 + existing.length + 1;
-      const subtotal = cart.reduce((sum, c) => sum + c.menuItem.price * c.quantity, 0);
-      const newDemoOrder: Order = {
-        id: `ord-${Date.now()}`,
-        orderNumber: newOrderNum,
-        type: orderType,
-        status: 'PREPARING',
-        tableId: selectedTable || undefined,
-        table: tables.find((t) => t.id === selectedTable),
-        subtotal,
-        total: subtotal,
-        notes: orderNotes || undefined,
-        createdBy: user?.id || 'demo-cashier-id',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        orderItems: cart.map((c, idx) => ({
-          id: `oi-${Date.now()}-${idx}`,
-          orderId: `ord-${Date.now()}`,
-          menuItemId: c.menuItem.id,
-          menuItem: c.menuItem,
-          quantity: c.quantity,
-          unitPrice: c.menuItem.price,
-          totalPrice: c.menuItem.price * c.quantity,
-          kitchen: c.menuItem.kitchen,
-          kitchenStatus: 'PREPARING',
-          notes: c.notes || undefined,
-        })),
-        kitchenOrders: [
-          { id: `ko-${Date.now()}-1`, orderId: `ord-${Date.now()}`, kitchen: 'KITCHEN_1', status: 'PREPARING' },
-          { id: `ko-${Date.now()}-2`, orderId: `ord-${Date.now()}`, kitchen: 'KITCHEN_2', status: 'PREPARING' },
-        ],
-      };
-      saveDemoOrders([newDemoOrder, ...existing]);
-      setSuccess(true);
-      setTimeout(() => router.push('/dashboard/cashier/orders'), 1500);
+      resetForm();
+      setTimeout(() => router.push('/dashboard/cashier/orders'), 1200);
+    } catch (err) {
+      if (isOffline(err)) {
+        // Offline: keep the ticket on this device so service is not blocked.
+        const demoOrder = buildDemoOrder({
+          type: orderType,
+          items: cart.map((c) => ({
+            menuItem: c.menuItem,
+            quantity: c.quantity,
+            notes: c.notes.trim() || undefined,
+          })),
+          table: tables.find((t) => t.id === selectedTable),
+          customer:
+            pickedCustomer ||
+            MOCK_CUSTOMERS.find((c) => c.id === selectedCustomer) ||
+            undefined,
+          notes: orderNotes.trim() || undefined,
+          deliveryAddress: deliveryAddress.trim() || undefined,
+          deliveryPhone: deliveryPhone.trim() || undefined,
+          createdBy: user?.id,
+        });
+        saveDemoOrders([demoOrder, ...getDemoOrders()]);
+        setOffline(true);
+        setSuccess(true);
+        resetForm();
+        setTimeout(() => router.push('/dashboard/cashier/orders'), 1200);
+      } else {
+        // Server rejected it — show why instead of pretending it worked.
+        setError(apiErrorMessage(err, 'Could not place the order'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -237,12 +287,16 @@ export default function NewOrderPage() {
       <div className="flex items-center justify-center h-64">
         <div className="text-center">
           <CheckCircle className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
-          <p className="text-xl font-bold text-surface-100">Order Created!</p>
-          <p className="text-surface-400 text-sm mt-1">Redirecting to orders...</p>
+          <p className="text-xl font-bold text-surface-100">Order sent to the kitchen</p>
+          <p className="text-surface-400 text-sm mt-1">Opening orders…</p>
         </div>
       </div>
     );
   }
+
+  const availableTables = tables.filter(
+    (t) => t.status === 'AVAILABLE' || t.id === selectedTable,
+  );
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -250,6 +304,21 @@ export default function NewOrderPage() {
         <h1 className="text-2xl font-bold text-surface-100">New Order</h1>
         <p className="text-sm text-surface-400 mt-1">Select items and configure the order.</p>
       </div>
+
+      {offline && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-amber-500/30 text-amber-400 text-sm">
+          <WifiOff className="w-4 h-4 flex-shrink-0" />
+          Server unreachable — running on the offline menu. Orders placed now stay on
+          this device only.
+        </div>
+      )}
+
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Left: Order Config + Menu */}
@@ -285,26 +354,28 @@ export default function NewOrderPage() {
                 <label className="block text-xs font-medium text-surface-400 mb-2 uppercase tracking-wider">
                   Select Table *
                 </label>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {tables
-                    .filter((t) => t.status === 'AVAILABLE' || t.id === selectedTable)
-                    .map((table) => (
+                {availableTables.length === 0 ? (
+                  <p className="text-sm text-amber-400">
+                    Every table is occupied. Close a settled order (Orders → Close) or
+                    free a table from Admin → Tables.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {availableTables.map((table) => (
                       <button
                         key={table.id}
                         onClick={() => setSelectedTable(table.id)}
                         className={`py-3 rounded-xl text-sm font-bold transition-all ${
                           selectedTable === table.id
                             ? 'bg-brand-500 text-white'
-                            : table.status === 'OCCUPIED'
-                            ? 'bg-red-500/10 border border-red-500/30 text-red-400 cursor-not-allowed'
                             : 'bg-surface-800/50 border border-surface-700/50 text-surface-300 hover:border-brand-500/40'
                         }`}
-                        disabled={table.status === 'OCCUPIED' && selectedTable !== table.id}
                       >
                         T{table.number}
                       </button>
                     ))}
-                </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -353,20 +424,25 @@ export default function NewOrderPage() {
                 className="input-field"
                 placeholder="Search customer by name or phone..."
                 value={
-                  selectedCustomerData
-                    ? `${selectedCustomerData.name}${selectedCustomerData.mobile ? ` (${selectedCustomerData.mobile})` : ''}`
+                  pickedCustomer
+                    ? `${pickedCustomer.name}${pickedCustomer.mobile ? ` (${pickedCustomer.mobile})` : ''}`
                     : customerSearch
                 }
                 onChange={(e) => {
                   setCustomerSearch(e.target.value);
                   setSelectedCustomer('');
+                  setPickedCustomer(null);
                   setShowCustomerDropdown(true);
                 }}
                 onFocus={() => setShowCustomerDropdown(true)}
               />
               {selectedCustomer && (
                 <button
-                  onClick={() => { setSelectedCustomer(''); setCustomerSearch(''); }}
+                  onClick={() => {
+                    setSelectedCustomer('');
+                    setPickedCustomer(null);
+                    setCustomerSearch('');
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300"
                 >
                   <X className="w-4 h-4" />
@@ -380,14 +456,15 @@ export default function NewOrderPage() {
                       className="w-full px-4 py-3 text-left hover:bg-surface-800/50 transition-colors text-sm"
                       onClick={() => {
                         setSelectedCustomer(c.id);
+                        setPickedCustomer(c);
                         setShowCustomerDropdown(false);
                       }}
                     >
                       <p className="font-medium text-surface-200">{c.name}</p>
                       {c.mobile && <p className="text-surface-500 text-xs">{c.mobile}</p>}
-                      {c.creditBalance > 0 && (
+                      {toNum(c.creditBalance) > 0 && (
                         <p className="text-amber-400 text-xs">
-                          Credit Balance: ₹{c.creditBalance}
+                          Outstanding credit: {formatMoney(c.creditBalance)}
                         </p>
                       )}
                     </button>
@@ -456,7 +533,7 @@ export default function NewOrderPage() {
                         </div>
                       )}
                       <p className="text-sm font-semibold text-surface-200 leading-tight">{item.name}</p>
-                      <p className="text-xs text-brand-400 font-bold mt-1">₹{item.price}</p>
+                      <p className="text-xs text-brand-400 font-bold mt-1">{formatMoney(item.price)}</p>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded mt-1 inline-block ${
                         item.kitchen === 'KITCHEN_1'
                           ? 'bg-amber-500/10 text-amber-400'
@@ -494,38 +571,71 @@ export default function NewOrderPage() {
               <>
                 <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
                   {cart.map((item) => (
-                    <div key={item.menuItem.id} className="flex items-center gap-3 p-2 rounded-xl bg-surface-800/50">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-surface-200 truncate">
-                          {item.menuItem.name}
-                        </p>
-                        <p className="text-xs text-brand-400">
-                          ₹{(item.menuItem.price * item.quantity).toFixed(2)}
-                        </p>
+                    <div
+                      key={item.menuItem.id}
+                      className="p-2 rounded-xl bg-surface-800/50 space-y-2"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-surface-200 truncate">
+                            {item.menuItem.name}
+                          </p>
+                          <p className="text-xs text-brand-400">
+                            {formatMoney(toNum(item.menuItem.price) * item.quantity, 2)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => updateQty(item.menuItem.id, -1)}
+                            className="w-6 h-6 rounded-lg bg-surface-700 flex items-center justify-center hover:bg-surface-600 transition-colors"
+                            aria-label="Decrease quantity"
+                          >
+                            <Minus className="w-3 h-3 text-surface-300" />
+                          </button>
+                          <span className="text-sm font-bold text-surface-200 w-5 text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            onClick={() => updateQty(item.menuItem.id, 1)}
+                            className="w-6 h-6 rounded-lg bg-surface-700 flex items-center justify-center hover:bg-surface-600 transition-colors"
+                            aria-label="Increase quantity"
+                          >
+                            <Plus className="w-3 h-3 text-surface-300" />
+                          </button>
+                          <button
+                            onClick={() =>
+                              setNotesFor(
+                                notesFor === item.menuItem.id ? null : item.menuItem.id,
+                              )
+                            }
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ml-1 ${
+                              item.notes
+                                ? 'bg-amber-500/20 text-amber-400'
+                                : 'bg-surface-700 text-surface-300 hover:bg-surface-600'
+                            }`}
+                            title="Add a note for the kitchen"
+                          >
+                            <StickyNote className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => removeFromCart(item.menuItem.id)}
+                            className="w-6 h-6 rounded-lg bg-red-500/10 flex items-center justify-center hover:bg-red-500/20 transition-colors"
+                            aria-label="Remove item"
+                          >
+                            <X className="w-3 h-3 text-red-400" />
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => updateQty(item.menuItem.id, -1)}
-                          className="w-6 h-6 rounded-lg bg-surface-700 flex items-center justify-center hover:bg-surface-600 transition-colors"
-                        >
-                          <Minus className="w-3 h-3 text-surface-300" />
-                        </button>
-                        <span className="text-sm font-bold text-surface-200 w-5 text-center">
-                          {item.quantity}
-                        </span>
-                        <button
-                          onClick={() => updateQty(item.menuItem.id, 1)}
-                          className="w-6 h-6 rounded-lg bg-surface-700 flex items-center justify-center hover:bg-surface-600 transition-colors"
-                        >
-                          <Plus className="w-3 h-3 text-surface-300" />
-                        </button>
-                        <button
-                          onClick={() => removeFromCart(item.menuItem.id)}
-                          className="w-6 h-6 rounded-lg bg-red-500/10 flex items-center justify-center hover:bg-red-500/20 transition-colors ml-1"
-                        >
-                          <X className="w-3 h-3 text-red-400" />
-                        </button>
-                      </div>
+
+                      {(notesFor === item.menuItem.id || item.notes) && (
+                        <input
+                          type="text"
+                          className="input-field text-xs py-1.5"
+                          placeholder="e.g. less spicy, no onion"
+                          value={item.notes}
+                          onChange={(e) => setItemNotes(item.menuItem.id, e.target.value)}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -541,19 +651,29 @@ export default function NewOrderPage() {
                 </div>
 
                 <div className="mt-3 pt-3 border-t border-surface-700/50">
+                  <div className="flex justify-between text-xs text-surface-500 mb-2">
+                    <span>Kitchen split</span>
+                    <span>
+                      K1: {kitchenSplit.k1} · K2: {kitchenSplit.k2}
+                    </span>
+                  </div>
                   <div className="flex justify-between text-sm mb-1">
                     <span className="text-surface-400">Subtotal</span>
-                    <span className="font-semibold text-surface-100">₹{cartTotal.toFixed(2)}</span>
+                    <span className="font-semibold text-surface-100">
+                      {formatMoney(cartTotal, 2)}
+                    </span>
                   </div>
                   <div className="flex justify-between font-bold mb-4">
                     <span className="text-surface-200">Total</span>
-                    <span className="text-brand-400 text-lg">₹{cartTotal.toFixed(2)}</span>
+                    <span className="text-brand-400 text-lg">
+                      {formatMoney(cartTotal, 2)}
+                    </span>
                   </div>
 
                   <button
                     onClick={handleSubmit}
                     disabled={submitting || cart.length === 0}
-                    className="btn-primary w-full flex items-center justify-center gap-2"
+                    className="btn-primary w-full flex items-center justify-center gap-2 disabled:opacity-60"
                   >
                     {submitting ? (
                       <Loader2 className="w-4 h-4 animate-spin" />

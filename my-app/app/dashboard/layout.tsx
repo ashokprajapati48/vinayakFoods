@@ -25,6 +25,7 @@ import {
   FileText,
   Settings,
   LayoutGrid,
+  WifiOff,
 } from 'lucide-react';
 import { useState } from 'react';
 import type { Role } from '@/types';
@@ -71,7 +72,7 @@ const roleNavItems: Record<Role, NavItem[]> = {
 };
 
 export default function DashboardLayout({ children }: { children: ReactNode }) {
-  const { user, isLoading, logout } = useAuth();
+  const { user, isLoading, isDemo, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -119,7 +120,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <UtensilsCrossed className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-sm font-bold gradient-text">RestaurantOS</h1>
+              <h1 className="text-sm font-bold gradient-text">VINAYAK FOODS</h1>
               <p className="text-[10px] text-surface-500">Management System</p>
             </div>
             <button
@@ -192,7 +193,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 <UtensilsCrossed className="w-4 h-4 text-white" />
               </div>
               <span className="text-sm font-bold gradient-text">
-                RestaurantOS
+                VINAYAK FOODS
               </span>
             </div>
           )}
@@ -200,6 +201,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <div className="flex-1" />
 
           <div className="flex items-center gap-3">
+            {isDemo && (
+              <span
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400 text-xs"
+                title="Signed in against local demo data because the API was unreachable"
+              >
+                <WifiOff className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Offline demo</span>
+              </span>
+            )}
+
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface-800/50 border border-surface-700/50">
               <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span className="text-xs text-surface-400">

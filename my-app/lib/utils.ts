@@ -4,13 +4,55 @@ export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
 }
 
-export function formatCurrency(amount: number): string {
+/**
+ * Money fields come back as numbers from the API, but the offline demo data and
+ * older responses can carry strings. Coerce before any arithmetic so totals add
+ * up instead of concatenating.
+ */
+export function toNum(value: unknown): number {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+export function sumBy<T>(items: T[], pick: (item: T) => unknown): number {
+  return items.reduce((total, item) => total + toNum(pick(item)), 0);
+}
+
+export function formatCurrency(amount: unknown): string {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(toNum(amount));
 }
+
+/** ₹1,250 — same grouping as formatCurrency without the currency symbol styling. */
+export function formatMoney(amount: unknown, decimals = 0): string {
+  return `₹${new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  }).format(toNum(amount))}`;
+}
+
+/** "Just now" / "12m" / "1h 05m" since the given timestamp. */
+export function formatElapsed(since: string | Date): string {
+  const ms = Date.now() - new Date(since).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (!Number.isFinite(mins) || mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m`;
+  const hours = Math.floor(mins / 60);
+  return `${hours}h ${String(mins % 60).padStart(2, '0')}m`;
+}
+
+export function minutesSince(since: string | Date): number {
+  const mins = Math.floor((Date.now() - new Date(since).getTime()) / 60000);
+  return Number.isFinite(mins) && mins > 0 ? mins : 0;
+}
+
 
 export function formatDate(date: string | Date): string {
   return new Intl.DateTimeFormat('en-IN', {
@@ -52,6 +94,25 @@ export function getStatusColor(status: string): string {
   };
   return colors[status] || 'bg-gray-500/20 text-gray-400 border-gray-500/30';
 }
+
+/**
+ * The schema calls a finished order DELIVERED; for a dine-in ticket that reads
+ * oddly, so label it by what actually happened.
+ */
+export function getOrderStatusLabel(status: string, type?: string): string {
+  if (status === 'DELIVERED') return type === 'DINE_IN' ? 'Completed' : 'Delivered';
+  if (status === 'COLLECTED') return type === 'DINE_IN' ? 'Served' : 'Picked up';
+  const labels: Record<string, string> = {
+    NEW: 'New',
+    PREPARING: 'Preparing',
+    READY: 'Ready',
+    CANCELLED: 'Cancelled',
+  };
+  return labels[status] || status;
+}
+
+/** Orders that are still moving through the kitchen/service flow. */
+export const ACTIVE_ORDER_STATUSES = ['NEW', 'PREPARING', 'READY', 'COLLECTED'];
 
 export function getRolePath(role: string): string {
   const paths: Record<string, string> = {

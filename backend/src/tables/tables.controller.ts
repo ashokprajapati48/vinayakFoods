@@ -9,7 +9,11 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { TablesService } from './tables.service.js';
-import { CreateTableDto, UpdateTableStatusDto } from './dto/table.dto.js';
+import {
+  CreateTableDto,
+  UpdateTableDto,
+  UpdateTableStatusDto,
+} from './dto/table.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 
 @Controller('tables')
@@ -30,6 +34,11 @@ export class TablesController {
   @Put(':id/status')
   updateStatus(@Param('id') id: string, @Body() dto: UpdateTableStatusDto) {
     return this.tablesService.updateStatus(id, dto);
+  }
+
+  @Put(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateTableDto) {
+    return this.tablesService.update(id, dto);
   }
 
   @Delete(':id')

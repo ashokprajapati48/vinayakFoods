@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'RestaurantOS — Restaurant Management System',
+  title: 'VINAYAK FOODS — Restaurant Management System',
   description:
     'Complete restaurant order, kitchen, payment, and business analytics management system.',
 };

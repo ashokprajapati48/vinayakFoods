@@ -1,39 +1,59 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { apiBaseUrl } from '@/lib/config';
+import type { User } from '@/types';
 import {
   Settings,
-  User,
+  User as UserIcon,
   Lock,
   Loader2,
   CheckCircle,
-  ChevronRight,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function AdminSettingsPage() {
-  const { user } = useAuth();
+  const { user, isDemo, updateUser } = useAuth();
   const [displayName, setDisplayName] = useState(user?.displayName || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [savingPassword, setSavingPassword] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // The stored user loads asynchronously; keep the field in step with it.
+  useEffect(() => {
+    if (user?.displayName) setDisplayName(user.displayName);
+  }, [user?.displayName]);
+
   const handleUpdateProfile = async () => {
-    setSaving(true);
+    if (!displayName.trim()) {
+      setMessage({ type: 'error', text: 'Display name cannot be empty' });
+      return;
+    }
+    if (isDemo) {
+      setMessage({
+        type: 'error',
+        text: 'Offline demo mode — connect to the API to save changes.',
+      });
+      return;
+    }
+
+    setSavingProfile(true);
     setMessage(null);
     try {
-      // In a real implementation, this would call the user update endpoint
-      // For now, just a stub
-      setTimeout(() => {
-        setMessage({ type: 'success', text: 'Profile updated successfully' });
-        setSaving(false);
-      }, 500);
-    } catch {
-      setMessage({ type: 'error', text: 'Failed to update profile' });
-      setSaving(false);
+      const res = await api.patch<User>('/auth/profile', {
+        displayName: displayName.trim(),
+      });
+      updateUser(res.data);
+      setMessage({ type: 'success', text: 'Profile updated' });
+    } catch (err) {
+      setMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to update profile') });
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -46,20 +66,29 @@ export default function AdminSettingsPage() {
       setMessage({ type: 'error', text: 'Password must be at least 8 characters' });
       return;
     }
-    setSaving(true);
+    if (isDemo) {
+      setMessage({
+        type: 'error',
+        text: 'Offline demo mode — connect to the API to change the password.',
+      });
+      return;
+    }
+
+    setSavingPassword(true);
     setMessage(null);
     try {
-      await api.post('/auth/change-password', {
-        currentPassword,
-        newPassword,
+      await api.post('/auth/change-password', { currentPassword, newPassword });
+      setMessage({
+        type: 'success',
+        text: 'Password changed. Other devices signed in with this account will need to sign in again.',
       });
-      setMessage({ type: 'success', text: 'Password changed successfully' });
-      setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      setMessage({ type: 'error', text: e.response?.data?.message || 'Failed to change password' });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setMessage({ type: 'error', text: apiErrorMessage(err, 'Failed to change password') });
     } finally {
-      setSaving(false);
+      setSavingPassword(false);
     }
   };
 
@@ -74,7 +103,11 @@ export default function AdminSettingsPage() {
         <div className={`glass-card p-4 flex items-center gap-3 border ${
           message.type === 'success' ? 'border-emerald-500/30' : 'border-red-500/30'
         }`}>
-          <CheckCircle className={`w-5 h-5 ${message.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`} />
+          {message.type === 'success' ? (
+            <CheckCircle className="w-5 h-5 text-emerald-400" />
+          ) : (
+            <AlertTriangle className="w-5 h-5 text-red-400" />
+          )}
           <p className={message.type === 'success' ? 'text-emerald-400' : 'text-red-400'}>{message.text}</p>
         </div>
       )}
@@ -82,7 +115,7 @@ export default function AdminSettingsPage() {
       {/* Profile Section */}
       <div className="glass-card p-5">
         <div className="flex items-center gap-2 mb-4">
-          <User className="w-4 h-4 text-brand-400" />
+          <UserIcon className="w-4 h-4 text-brand-400" />
           <h2 className="font-semibold text-surface-100">Profile Information</h2>
         </div>
         <div className="space-y-3">
@@ -101,10 +134,10 @@ export default function AdminSettingsPage() {
         </div>
         <button
           onClick={handleUpdateProfile}
-          disabled={saving}
-          className="btn-primary mt-4 flex items-center gap-2 text-sm"
+          disabled={savingProfile || displayName.trim() === (user?.displayName || '')}
+          className="btn-primary mt-4 flex items-center gap-2 text-sm disabled:opacity-60"
         >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+          {savingProfile ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
           Save Changes
         </button>
       </div>
@@ -131,10 +164,10 @@ export default function AdminSettingsPage() {
         </div>
         <button
           onClick={handleChangePassword}
-          disabled={saving || !currentPassword || !newPassword}
-          className="btn-primary mt-4 flex items-center gap-2 text-sm"
+          disabled={savingPassword || !currentPassword || !newPassword}
+          className="btn-primary mt-4 flex items-center gap-2 text-sm disabled:opacity-60"
         >
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
+          {savingPassword ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />}
           Change Password
         </button>
       </div>
@@ -147,8 +180,9 @@ export default function AdminSettingsPage() {
         </div>
         <div className="space-y-3">
           {[
-            { label: 'System', value: 'RestaurantOS v1.0' },
-            { label: 'API URL', value: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api' },
+            { label: 'System', value: 'VINAYAK FOODS v1.0' },
+            { label: 'API URL', value: apiBaseUrl() },
+            { label: 'Mode', value: isDemo ? 'Offline demo data' : 'Connected to API' },
             { label: 'Environment', value: process.env.NODE_ENV || 'development' },
           ].map((item) => (
             <div key={item.label} className="flex items-center justify-between py-2 border-b border-surface-800">

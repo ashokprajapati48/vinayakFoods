@@ -19,8 +19,14 @@ export class CustomersController {
   constructor(private readonly customersService: CustomersService) {}
 
   @Get()
-  findAll(@Query('search') search?: string) {
-    return this.customersService.findAll(search);
+  findAll(
+    @Query('search') search?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.customersService.findAll(
+      search,
+      includeInactive === 'true' || includeInactive === '1',
+    );
   }
 
   @Get(':id')

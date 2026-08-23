@@ -2,7 +2,7 @@ import {
   IsString,
   IsNotEmpty,
   IsOptional,
-  IsEmail,
+  IsBoolean,
 } from 'class-validator';
 
 export class CreateCustomerDto {
@@ -40,4 +40,9 @@ export class UpdateCustomerDto {
   @IsOptional()
   @IsString()
   customerType?: string;
+
+  /** Used by the admin screen to deactivate/reactivate a customer. */
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
 }

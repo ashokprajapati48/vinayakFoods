@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, sumBy } from '@/lib/utils';
 import type { Expense, ExpenseCategory } from '@/types';
 import {
   Receipt,
@@ -12,41 +13,50 @@ import {
   Loader2,
   CheckCircle,
   Calendar,
+  AlertTriangle,
+  Tag,
 } from 'lucide-react';
+
+function isoDate(value: string | Date): string {
+  return new Date(value).toISOString().split('T')[0];
+}
 
 export default function AdminExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [categories, setCategories] = useState<ExpenseCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [showCatModal, setShowCatModal] = useState(false);
+  const [newCategory, setNewCategory] = useState('');
   const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [startDate, setStartDate] = useState(isoDate(new Date()));
+  const [endDate, setEndDate] = useState(isoDate(new Date()));
 
   // Form
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [amount, setAmount] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+  const [date, setDate] = useState(isoDate(new Date()));
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'ONLINE' | 'CREDIT'>('CASH');
 
   const loadData = useCallback(async () => {
     try {
       const [expRes, catRes] = await Promise.all([
-        api.get(`/expenses?startDate=${startDate}&endDate=${endDate}`),
-        api.get('/expenses/categories'),
+        api.get<Expense[]>(`/expenses?startDate=${startDate}&endDate=${endDate}`),
+        api.get<ExpenseCategory[]>('/expenses/categories'),
       ]);
-      setExpenses(expRes.data);
-      setCategories(catRes.data);
-      if (catRes.data.length > 0 && !category) setCategory(catRes.data[0].id);
-    } catch {
-      //
+      setExpenses(Array.isArray(expRes.data) ? expRes.data : []);
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
+      setError(null);
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not load expenses'));
     } finally {
       setLoading(false);
     }
-  }, [startDate, endDate, category]);
+  }, [startDate, endDate]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -56,33 +66,62 @@ export default function AdminExpensesPage() {
       setCategory(expense.categoryId);
       setDescription(expense.description);
       setAmount(String(expense.amount));
-      setDate(expense.date);
+      // <input type="date"> only accepts YYYY-MM-DD, never a full timestamp.
+      setDate(isoDate(expense.date));
       setPaymentMethod(expense.paymentMethod);
     } else {
       setEditExpense(null);
       setDescription(''); setAmount('');
-      setDate(new Date().toISOString().split('T')[0]);
+      setDate(isoDate(new Date()));
       setPaymentMethod('CASH');
-      if (categories.length > 0) setCategory(categories[0].id);
+      setCategory((current) => current || categories[0]?.id || '');
     }
     setShowModal(true);
   };
 
   const handleSave = async () => {
-    if (!category || !description || !amount) return;
+    if (!category || !description.trim() || !amount) {
+      setError('Pick a category and fill in a description and amount.');
+      return;
+    }
     setSaving(true);
     try {
-      const data = { categoryId: category, description, amount: parseFloat(amount), date, paymentMethod };
+      const data = {
+        categoryId: category,
+        description: description.trim(),
+        amount: parseFloat(amount),
+        date,
+        paymentMethod,
+      };
       if (editExpense) {
         await api.put(`/expenses/${editExpense.id}`, data);
       } else {
         await api.post('/expenses', data);
       }
       setShowModal(false);
+      setError(null);
       loadData();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to save');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not save the expense'));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCreateCategory = async () => {
+    if (!newCategory.trim()) return;
+    setSaving(true);
+    try {
+      const res = await api.post<ExpenseCategory>('/expenses/categories', {
+        name: newCategory.trim(),
+      });
+      setNewCategory('');
+      setShowCatModal(false);
+      setCategory(res.data.id);
+      setError(null);
+      loadData();
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not create the category'));
     } finally {
       setSaving(false);
     }
@@ -93,10 +132,12 @@ export default function AdminExpensesPage() {
     try {
       await api.delete(`/expenses/${id}`);
       loadData();
-    } catch { }
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Could not delete the expense'));
+    }
   };
 
-  const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+  const total = sumBy(expenses, (e) => e.amount);
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -105,11 +146,24 @@ export default function AdminExpensesPage() {
           <h1 className="text-2xl font-bold text-surface-100">Expenses</h1>
           <p className="text-sm text-surface-400 mt-1">Track all business expenses.</p>
         </div>
-        <button onClick={() => openModal()} className="btn-primary flex items-center gap-2 text-sm">
-          <Plus className="w-4 h-4" />
-          Add Expense
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => setShowCatModal(true)} className="btn-secondary flex items-center gap-2 text-sm">
+            <Tag className="w-4 h-4" />
+            Add Category
+          </button>
+          <button onClick={() => openModal()} className="btn-primary flex items-center gap-2 text-sm">
+            <Plus className="w-4 h-4" />
+            Add Expense
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       {/* Date Filter */}
       <div className="glass-card p-4 flex items-center gap-4 flex-wrap">
@@ -123,7 +177,7 @@ export default function AdminExpensesPage() {
           <input type="date" className="input-field py-1.5 text-sm" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
         </div>
         <div className="ml-auto text-right">
-          <p className="text-xl font-bold text-red-400">₹{total.toFixed(2)}</p>
+          <p className="text-xl font-bold text-red-400">{formatMoney(total, 2)}</p>
           <p className="text-xs text-surface-400">{expenses.length} expenses</p>
         </div>
       </div>
@@ -162,7 +216,7 @@ export default function AdminExpensesPage() {
                     </span>
                   </td>
                   <td className="text-surface-200 font-medium">{expense.description}</td>
-                  <td className="font-bold text-red-400">₹{expense.amount}</td>
+                  <td className="font-bold text-red-400">{formatMoney(expense.amount)}</td>
                   <td>
                     <span className={`text-xs font-semibold ${
                       expense.paymentMethod === 'CASH' ? 'text-emerald-400' :
@@ -232,9 +286,41 @@ export default function AdminExpensesPage() {
             </div>
             <div className="flex gap-3 mt-5">
               <button onClick={() => setShowModal(false)} className="btn-secondary flex-1 text-sm">Cancel</button>
-              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 text-sm flex items-center justify-center gap-2">
+              <button onClick={handleSave} disabled={saving} className="btn-primary flex-1 text-sm flex items-center justify-center gap-2 disabled:opacity-60">
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
                 {saving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New expense category */}
+      {showCatModal && (
+        <div className="modal-overlay" onClick={() => setShowCatModal(false)}>
+          <div className="modal-content glass-card p-6 w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-surface-100">New Expense Category</h2>
+              <button onClick={() => setShowCatModal(false)} className="text-surface-500 hover:text-surface-300">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <input
+              type="text"
+              className="input-field mb-4"
+              placeholder="e.g. Gas cylinder"
+              value={newCategory}
+              onChange={(e) => setNewCategory(e.target.value)}
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setShowCatModal(false)} className="btn-secondary flex-1 text-sm">Cancel</button>
+              <button
+                onClick={handleCreateCategory}
+                disabled={saving || !newCategory.trim()}
+                className="btn-primary flex-1 text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                Create
               </button>
             </div>
           </div>

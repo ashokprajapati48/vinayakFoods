@@ -25,3 +25,22 @@ export class CreateTableDto {
   @Type(() => Number)
   capacity?: number;
 }
+
+export class UpdateTableDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Type(() => Number)
+  number?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(20)
+  @Type(() => Number)
+  capacity?: number;
+
+  @IsOptional()
+  @IsEnum(TableStatusEnum)
+  status?: TableStatusEnum;
+}

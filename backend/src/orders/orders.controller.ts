@@ -10,7 +10,11 @@ import {
   Request,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service.js';
-import { CreateOrderDto, UpdateOrderStatusDto } from './dto/order.dto.js';
+import {
+  CreateOrderDto,
+  UpdateKitchenStatusDto,
+  UpdateOrderStatusDto,
+} from './dto/order.dto.js';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard.js';
 
 @Controller('orders')
@@ -19,8 +23,12 @@ export class OrdersController {
   constructor(private readonly ordersService: OrdersService) {}
 
   @Get()
-  findAll(@Query('status') status?: string, @Query('date') date?: string) {
-    return this.ordersService.findAll({ status, date });
+  findAll(
+    @Query('status') status?: string,
+    @Query('date') date?: string,
+    @Query('type') type?: string,
+  ) {
+    return this.ordersService.findAll({ status, date, type });
   }
 
   @Get('ready')
@@ -60,7 +68,7 @@ export class OrdersController {
   updateKitchenStatus(
     @Param('orderId') orderId: string,
     @Param('kitchen') kitchen: string,
-    @Body() body: { status: string },
+    @Body() body: UpdateKitchenStatusDto,
   ) {
     return this.ordersService.updateKitchenOrderStatus(orderId, kitchen, body.status);
   }

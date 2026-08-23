@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import api from '@/lib/api';
+import api, { apiErrorMessage } from '@/lib/api';
+import { formatMoney, toNum } from '@/lib/utils';
 import type { Customer } from '@/types';
 import {
   Users,
@@ -12,7 +13,7 @@ import {
   Wallet,
   X,
   Loader2,
-  Edit,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function CashierCustomersPage() {
@@ -21,6 +22,7 @@ export default function CashierCustomersPage() {
   const [search, setSearch] = useState('');
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
   const [mobile, setMobile] = useState('');
@@ -28,10 +30,14 @@ export default function CashierCustomersPage() {
 
   const loadCustomers = useCallback(async () => {
     try {
-      const res = await api.get(`/customers${search ? `?search=${search}` : ''}`);
-      setCustomers(res.data);
-    } catch {
+      const res = await api.get<Customer[]>(
+        `/customers${search.trim() ? `?search=${encodeURIComponent(search.trim())}` : ''}`,
+      );
+      setCustomers(Array.isArray(res.data) ? res.data : []);
+      setError(null);
+    } catch (err) {
       setCustomers([]);
+      setError(apiErrorMessage(err, 'Could not load customers'));
     } finally {
       setLoading(false);
     }
@@ -46,13 +52,17 @@ export default function CashierCustomersPage() {
     if (!name.trim()) return;
     setCreating(true);
     try {
-      await api.post('/customers', { name, mobile: mobile || undefined, address: address || undefined });
+      await api.post('/customers', {
+        name: name.trim(),
+        mobile: mobile.trim() || undefined,
+        address: address.trim() || undefined,
+      });
       setShowCreate(false);
       setName(''); setMobile(''); setAddress('');
+      setError(null);
       loadCustomers();
     } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      alert(e.response?.data?.message || 'Failed to create customer');
+      setError(apiErrorMessage(err, 'Failed to create customer'));
     } finally {
       setCreating(false);
     }
@@ -73,6 +83,13 @@ export default function CashierCustomersPage() {
           New Customer
         </button>
       </div>
+
+      {error && (
+        <div className="glass-card p-3 flex items-center gap-2 border border-red-500/30 text-red-400 text-sm">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </div>
+      )}
 
       {/* Search */}
       <div className="relative">
@@ -136,10 +153,10 @@ export default function CashierCustomersPage() {
                     )}
                   </td>
                   <td>
-                    {customer.creditBalance > 0 ? (
+                    {toNum(customer.creditBalance) > 0 ? (
                       <span className="flex items-center gap-1 text-amber-400 font-bold text-sm">
                         <Wallet className="w-3.5 h-3.5" />
-                        ₹{customer.creditBalance}
+                        {formatMoney(customer.creditBalance)}
                       </span>
                     ) : (
                       <span className="text-emerald-400 text-sm">Clear</span>

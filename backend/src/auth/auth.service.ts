@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import bcrypt from 'bcrypt';
@@ -120,6 +120,62 @@ export class AuthService {
       data: { refreshToken: null },
     });
     return { message: 'Logged out successfully' };
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new UnauthorizedException('User not found');
+
+    const isCurrentValid = await bcrypt.compare(
+      currentPassword,
+      user.passwordHash,
+    );
+    if (!isCurrentValid) {
+      throw new BadRequestException('Current password is incorrect');
+    }
+    if (await bcrypt.compare(newPassword, user.passwordHash)) {
+      throw new BadRequestException(
+        'New password must be different from the current one',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      // Signing out other sessions is the point of a password change.
+      data: { passwordHash, refreshToken: null },
+    });
+
+    return { message: 'Password changed successfully' };
+  }
+
+  async updateProfile(userId: string, displayName: string) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: { displayName: displayName.trim() },
+    });
+
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role,
+    };
+  }
+
+  async me(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user || !user.isActive) throw new UnauthorizedException('User not found');
+    return {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role,
+    };
   }
 
   private async generateTokens(payload: JwtPayload): Promise<AuthTokens> {

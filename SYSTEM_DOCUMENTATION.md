@@ -1,7 +1,7 @@
-# 🍽️ RestaurantOS — Comprehensive Technical & Architecture Documentation
+# 🍽️ VINAYAK FOODS — Comprehensive Technical & Architecture Documentation
 
 ## 1. System Overview
-**RestaurantOS** is a full-stack, enterprise-grade Restaurant Management & Point-of-Sale (POS) system designed for multi-station kitchen coordination, dine-in/delivery order handling, customer credit tracking, employee payroll, and real-time operational analytics.
+**VINAYAK FOODS** is a full-stack, enterprise-grade Restaurant Management & Point-of-Sale (POS) system designed for multi-station kitchen coordination, dine-in/delivery order handling, customer credit tracking, employee payroll, and real-time operational analytics.
 
 ---
 
@@ -155,29 +155,39 @@ When the database is seeded (`npm run db:seed`), the following test accounts are
 1. **Frontend Architecture**:
    - All 5 role-specific dashboard interfaces built with glassmorphism UI.
    - POS cart system, Kitchen KDS interfaces, Table grid, Credit management screens.
-   - Client-side mock/demo fallback allowing offline exploration.
+   - Real-time updates on every screen via a shared Socket.IO connection.
+   - Offline fallback that is clearly labelled, used only when the API is unreachable.
 2. **Backend Architecture**:
    - NestJS 11 modular micro-architecture fully configured.
    - Prisma schema with 14 relational models, cascade deletes, and indexing.
    - Real-time Socket.IO gateway with station room separation.
-3. **Resolved Issues**:
-   - **Login Bounce-Back Loop Fixed**: Updated [lib/api.ts](file:///c:/Users/Vedansh/New%20folder%20(2)/my-app/lib/api.ts) to prevent the 401 response interceptor from aggressively clearing `localStorage` and redirecting when demo tokens are present.
+   - PostgreSQL 16 installed, schema applied, seed data loaded.
 
-### Pending Setup
-- **PostgreSQL Database Installation**:
-  - PostgreSQL server needs to be installed on Windows and running on port `5432`.
-  - Database `restaurant_db` needs to be initialized, migrated (`npx prisma migrate dev`), and seeded (`npm run db:seed`).
+### Resolved Issues (2026-08-23)
+- **`Cannot GET /` 404**: the API root now returns a service/health payload pointing at the UI, and `/api/health` reports database status.
+- **Kitchen screens**: infinite loading spinner, missing WebSocket wiring (`window.__socket` was never assigned), stale demo tickets shown when the live queue was empty, and READY tickets rendered as "PREPARING" — all fixed. Both stations now share one component with live updates, a new-order chime, ticking wait timers and urgency highlighting after 15 minutes.
+- **Money fields**: Prisma `Decimal` columns serialized as strings, so `sum + order.total` concatenated and `.toFixed()` threw. A global serialize interceptor converts them to numbers (HTTP *and* socket payloads).
+- **Dine-in tables were never released**: paying a served dine-in order now closes it and frees the table; the cashier has an explicit "Close & free table" action and admin can set any table's status by hand.
+- **Login fallback**: a wrong password against a reachable server no longer logs you into demo mode.
+- **Missing endpoints added**: `POST /api/auth/change-password`, `PATCH /api/auth/profile`, `GET /api/auth/me`, `PUT /api/tables/:id`.
+- **Customer management**: `isActive` toggle accepted, inactive customers listable, duplicate mobile numbers return 409 with a readable message.
+- **Delivery orders**: address/phone are stored even without a saved customer record (`delivery_info.customer_id` is now nullable).
+- **Validation**: bad `status`/`kitchen` values return 400 with the allowed list instead of a 500.
+- **Multi-device**: API base URL and CORS resolve automatically for LAN devices, so kitchen tablets work without extra configuration.
+
+### Known Limitations
+- `next lint` reports pre-existing `react-hooks/set-state-in-effect` warnings for the fetch-in-`useEffect` data pattern used across the screens. Harmless today; migrating to the already-installed `@tanstack/react-query` would clear them.
+- Payments are one-per-order (no split payments) and the amount is not forced to equal the order total, which leaves room for discounts but also for mistakes.
 
 ---
 
 ## 8. Quick Start Guide
 
-### 1. Database Setup (Once PostgreSQL is installed)
+### 1. Database (already provisioned on this machine)
 ```bash
-# In backend directory:
 cd backend
-npx prisma migrate dev --name init
-npm run db:seed
+npx prisma db push     # apply schema changes
+npm run db:seed        # reload demo data (optional)
 ```
 
 ### 2. Run Both Development Servers
@@ -191,4 +201,5 @@ cd my-app
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) to access the application.
+Open [http://localhost:3000](http://localhost:3000) for the app.
+`http://localhost:3001` is the API — it answers with a status page, and `/api/health` reports the database connection.
