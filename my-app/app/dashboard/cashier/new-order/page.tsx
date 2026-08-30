@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import api, { apiErrorMessage, isOffline } from '@/lib/api';
 import { formatMoney, toNum } from '@/lib/utils';
-import type { Category, MenuItem, Table, Customer, CreateOrderDto } from '@/types';
+import type { Category, MenuItem, Table, Customer, CreateOrderDto, Order } from '@/types';
+import ThermalReceiptModal from '@/components/receipts/ThermalReceiptModal';
 import {
   ShoppingCart,
   Plus,
@@ -21,6 +22,7 @@ import {
   AlertTriangle,
   WifiOff,
   StickyNote,
+  Printer,
 } from 'lucide-react';
 
 interface CartItem {
@@ -51,6 +53,8 @@ export default function NewOrderPage() {
   const [success, setSuccess] = useState(false);
   const [offline, setOffline] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastOrder, setLastOrder] = useState<Order | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
 
   // Order config
   const [orderType, setOrderType] = useState<'DINE_IN' | 'DELIVERY'>('DINE_IN');
@@ -236,10 +240,10 @@ export default function NewOrderPage() {
     };
 
     try {
-      await api.post('/orders', payload);
+      const res = await api.post<Order>('/orders', payload);
+      setLastOrder(res.data ?? null);
       setSuccess(true);
       resetForm();
-      setTimeout(() => router.push('/dashboard/cashier/orders'), 1200);
     } catch (err) {
       if (isOffline(err)) {
         // Offline: keep the ticket on this device so service is not blocked.
@@ -262,9 +266,9 @@ export default function NewOrderPage() {
         });
         saveDemoOrders([demoOrder, ...getDemoOrders()]);
         setOffline(true);
+        setLastOrder(demoOrder as unknown as Order);
         setSuccess(true);
         resetForm();
-        setTimeout(() => router.push('/dashboard/cashier/orders'), 1200);
       } else {
         // Server rejected it — show why instead of pretending it worked.
         setError(apiErrorMessage(err, 'Could not place the order'));
@@ -284,13 +288,50 @@ export default function NewOrderPage() {
 
   if (success) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <CheckCircle className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
-          <p className="text-xl font-bold text-surface-100">Order sent to the kitchen</p>
-          <p className="text-surface-400 text-sm mt-1">Opening orders…</p>
+      <>
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <CheckCircle className="w-16 h-16 text-emerald-400 mx-auto mb-4" />
+            <p className="text-xl font-bold text-surface-100">Order placed! 🎉</p>
+            <p className="text-surface-400 text-sm mt-1 mb-6">What would you like to do next?</p>
+            <div className="flex flex-wrap justify-center gap-3">
+              {lastOrder && (
+                <button
+                  onClick={() => setShowReceipt(true)}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all"
+                  style={{
+                    background: 'rgba(249,115,22,0.15)',
+                    border: '1px solid rgba(249,115,22,0.4)',
+                    color: '#fb923c',
+                  }}
+                >
+                  <Printer className="w-4 h-4" />
+                  Print Receipt / KOT
+                </button>
+              )}
+              <button
+                onClick={() => router.push('/dashboard/cashier/orders')}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm btn-primary"
+              >
+                View Orders
+              </button>
+              <button
+                onClick={() => setSuccess(false)}
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm btn-secondary"
+              >
+                New Order
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
+        {showReceipt && lastOrder && (
+          <ThermalReceiptModal
+            order={lastOrder}
+            cashierName={user?.displayName}
+            onClose={() => setShowReceipt(false)}
+          />
+        )}
+      </>
     );
   }
 

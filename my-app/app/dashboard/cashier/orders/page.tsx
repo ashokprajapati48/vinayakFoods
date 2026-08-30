@@ -12,6 +12,7 @@ import {
   getOrderStatusLabel,
 } from '@/lib/utils';
 import type { Order } from '@/types';
+import ThermalReceiptModal from '@/components/receipts/ThermalReceiptModal';
 import {
   AlertTriangle,
   CheckCircle,
@@ -20,6 +21,7 @@ import {
   Clock,
   Loader2,
   Lock,
+  Printer,
   RefreshCw,
   ShoppingCart,
   TableProperties,
@@ -80,6 +82,7 @@ export default function CashierOrdersPage() {
   const [filter, setFilter] = useState<FilterKey>('active');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [receiptOrder, setReceiptOrder] = useState<Order | null>(null);
 
   useTicker(30000);
 
@@ -342,6 +345,15 @@ export default function CashierOrdersPage() {
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-bold text-brand-400">{formatMoney(order.total)}</p>
                   <div className="flex items-center gap-2">
+                    {/* Print Bill button */}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setReceiptOrder(order); }}
+                      className="text-xs px-2 py-1 rounded-lg bg-orange-500/10 border border-orange-500/30 text-orange-400 hover:bg-orange-500/20 transition-colors flex items-center gap-1"
+                      title="Print Bill / KOT"
+                    >
+                      <Printer className="w-3 h-3" />
+                      Bill
+                    </button>
                     {order.payment ? (
                       <span className="text-xs text-emerald-400 flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" />
@@ -438,6 +450,19 @@ export default function CashierOrdersPage() {
             </div>
 
             <div className="flex flex-wrap gap-2 mt-4">
+              {/* Print Bill – always available in modal */}
+              <button
+                onClick={() => { setSelectedOrder(null); setReceiptOrder(selectedOrder); }}
+                className="flex items-center gap-1.5 text-sm px-3 py-2 rounded-xl transition-all"
+                style={{
+                  background: 'rgba(249,115,22,0.12)',
+                  border: '1px solid rgba(249,115,22,0.35)',
+                  color: '#fb923c',
+                }}
+              >
+                <Printer className="w-4 h-4" />
+                Print Bill / KOT
+              </button>
               {['NEW', 'PREPARING'].includes(selectedOrder.status) &&
                 !selectedOrder.payment && (
                   <button
@@ -470,6 +495,14 @@ export default function CashierOrdersPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Thermal Receipt Modal */}
+      {receiptOrder && (
+        <ThermalReceiptModal
+          order={receiptOrder}
+          onClose={() => setReceiptOrder(null)}
+        />
       )}
     </div>
   );

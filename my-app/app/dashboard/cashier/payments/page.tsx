@@ -6,6 +6,7 @@ import api, { apiErrorMessage } from '@/lib/api';
 import { useOrderEvents } from '@/lib/realtime';
 import { formatMoney, getOrderStatusLabel } from '@/lib/utils';
 import type { Order, Payment } from '@/types';
+import ThermalReceiptModal from '@/components/receipts/ThermalReceiptModal';
 import {
   CreditCard,
   CheckCircle,
@@ -15,6 +16,7 @@ import {
   Wallet,
   Clock,
   AlertTriangle,
+  Printer,
 } from 'lucide-react';
 
 export default function CashierPaymentsPage() {
@@ -30,6 +32,8 @@ export default function CashierPaymentsPage() {
   const [processing, setProcessing] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastPaidOrder, setLastPaidOrder] = useState<Order | null>(null);
+  const [showReceipt, setShowReceipt] = useState(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -85,6 +89,7 @@ export default function CashierPaymentsPage() {
         method: paymentMethod,
         transactionId: transactionId.trim() || undefined,
       });
+      setLastPaidOrder(selectedOrder);
       setSuccess(true);
       setSelectedOrder(null);
       setTransactionId('');
@@ -103,19 +108,36 @@ export default function CashierPaymentsPage() {
   ];
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div>
+    <>
+      <div className="space-y-4 animate-fade-in">
+        <div>
         <h1 className="text-2xl font-bold text-surface-100">Payments</h1>
         <p className="text-sm text-surface-400 mt-1">Process payments for completed orders.</p>
       </div>
 
       {success && (
-        <div className="glass-card p-4 border border-emerald-500/30 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-emerald-400" />
-          <p className="text-emerald-400 font-medium">
-            Payment recorded. Dine-in tables are freed automatically once the order is
-            served.
-          </p>
+        <div className="glass-card p-4 border border-emerald-500/30 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+            <p className="text-emerald-400 font-medium">
+              Payment recorded. Dine-in tables are freed automatically once the order is
+              served.
+            </p>
+          </div>
+          {lastPaidOrder && (
+            <button
+              onClick={() => setShowReceipt(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                background: 'rgba(249,115,22,0.15)',
+                border: '1px solid rgba(249,115,22,0.4)',
+                color: '#fb923c',
+              }}
+            >
+              <Printer className="w-4 h-4" />
+              Print Receipt
+            </button>
+          )}
         </div>
       )}
 
@@ -316,6 +338,15 @@ export default function CashierPaymentsPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+
+      {/* Thermal Receipt Modal */}
+      {showReceipt && lastPaidOrder && (
+        <ThermalReceiptModal
+          order={lastPaidOrder}
+          onClose={() => setShowReceipt(false)}
+        />
+      )}
+    </>
   );
 }
