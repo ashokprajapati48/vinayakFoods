@@ -242,3 +242,5 @@ Open `http://localhost:3000`. The API health endpoint is
 - Validate payment amounts against totals or introduce an explicit discount/adjustment model.
 - Add audit-log writes for payments, cancellations, credit changes and account changes.
 - Disable the offline demo-login path in a production build.
+#   V i n a y a k F o o d s W i f i S e t u p  
+ 
